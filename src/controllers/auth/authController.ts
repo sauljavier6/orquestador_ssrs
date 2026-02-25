@@ -8,34 +8,34 @@ import Phone from "../../models/Phone";
 import { Request, Response } from "express";
 import crypto from "crypto";
 import { sendPasswordResetEmail } from "../../services/email.service";
+import { NetSuiteService } from "../../services/nsAuth.service";
 
 export const register = async (req: Request, res: Response) => {
   const { fullName, customerNumber, rfc, phone, email, password } = req.body;
-
   const profileImage = req.file?.filename || "default.png";
-
-  console.log('profileImage', profileImage)
 
   const t = await sequelize.transaction();
 
   try {
+    const nsCustomer = await NetSuiteService.getCustomerByEntityId(
+      String(customerNumber),
+    );
+
+    if (!nsCustomer) {
+      throw new Error("El número de cliente no existe en NetSuite");
+    }
+
     const emailExists = await Email.findOne({
       where: { Description: email },
       transaction: t,
     });
-
-    if (emailExists) {
-      throw new Error("Correo ya existe");
-    }
+    if (emailExists) throw new Error("Correo ya existe");
 
     const phoneExists = await Phone.findOne({
       where: { Description: phone },
       transaction: t,
     });
-
-    if (phoneExists) {
-      throw new Error("Teléfono ya existe");
-    }
+    if (phoneExists) throw new Error("Teléfono ya existe");
 
     const emailRecord = await Email.create(
       { Description: email, State: true },
@@ -57,7 +57,9 @@ export const register = async (req: Request, res: Response) => {
         ID_Phone: phoneRecord.ID_Phone,
         RFC: rfc,
         Imagen: profileImage,
-        ID_Netsuite: customerNumber, 
+        ID_Netsuite: nsCustomer.id,
+        NumeroCliente: nsCustomer.entityid,
+        Companyname: nsCustomer.companyname, 
         Password: hashedPassword,
         State: true,
       },
@@ -75,7 +77,6 @@ export const register = async (req: Request, res: Response) => {
     });
   } catch (error) {
     await t.rollback();
-
     return res.status(400).json({
       message: error instanceof Error ? error.message : "Error en el servidor",
     });
@@ -122,7 +123,7 @@ export const login = async (req: Request, res: Response) => {
         netsuiteId: user.ID_Netsuite,
       },
       process.env.JWT_SECRET as string,
-      { expiresIn: "1m" },
+      { expiresIn: "15m" },
     );
 
     const refreshToken = jwt.sign(

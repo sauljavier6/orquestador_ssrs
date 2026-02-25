@@ -5,6 +5,9 @@ import Users from '../models/Users';
 import Rol from '../models/Rol';
 import Phone from '../models/Phone';
 import Email from '../models/Email';
+import Factura from '../models/Facturas';
+import Lineas from '../models/Lineas';
+import Pagos from '../models/Pagos';
 
 
 dotenv.config();
@@ -16,7 +19,7 @@ const sequelize = new Sequelize({
   username: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  models: [ Users, Rol, Phone, Email ],
+  models: [ Users, Rol, Phone, Email, Factura, Lineas, Pagos ],
   logging: false,
 });
 

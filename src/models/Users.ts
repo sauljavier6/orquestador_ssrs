@@ -1,7 +1,16 @@
 // @/models.ts
-import { Table, Model, Column, DataType, PrimaryKey, AutoIncrement, ForeignKey, BelongsTo, HasMany } from "sequelize-typescript";
-import Rol from './Rol';
-import Email from './Email';
+import {
+  Table,
+  Model,
+  Column,
+  DataType,
+  PrimaryKey,
+  AutoIncrement,
+  ForeignKey,
+  BelongsTo
+} from "sequelize-typescript";
+import Rol from "./Rol";
+import Email from "./Email";
 import Phone from "./Phone";
 
 @Table({ tableName: "Users" })
@@ -9,7 +18,7 @@ export default class Users extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
-    type: DataType.INTEGER
+    type: DataType.INTEGER,
   })
   declare ID_User: number;
 
@@ -24,6 +33,18 @@ export default class Users extends Model {
     allowNull: true,
   })
   declare ID_Netsuite: number;
+
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  declare NumeroCliente: number;
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: false,
+  })
+  declare Companyname: string;
 
   @Column({
     type: DataType.STRING,
@@ -94,5 +115,4 @@ export default class Users extends Model {
     defaultValue: true,
   })
   declare State: boolean;
-
 }
