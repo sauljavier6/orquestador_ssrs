@@ -6,6 +6,7 @@ import indexRoutes from './routes/index';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import path from "path"; 
+import "./workers/ssrs.worker.ts";
 
 dotenv.config();
 const FRONTEND = process.env.FRONTEND_ORIGINS;
@@ -28,7 +29,7 @@ app.use(cookieParser());
 // Agrupador de rutas
 app.use('/api', indexRoutes);
 
-const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
+const PORT = process.env.PORT ? Number(process.env.PORT) : 4580;
 
 sequelize.sync({ alter: true }).then(() => {
   console.log("✅ Base de datos conectada");
