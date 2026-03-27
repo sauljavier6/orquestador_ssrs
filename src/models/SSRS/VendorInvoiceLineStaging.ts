@@ -15,16 +15,25 @@ export default class VendorInvoiceLineStaging extends Model {
     @PrimaryKey
     @Column({
         type: DataType.BIGINT,
+        autoIncrement: true
+    })
+    declare ID_Staging: number;
+
+
+    @Column({
+        type: DataType.BIGINT,
         allowNull: false
     })
     declare vendor_invoice_id: number;
 
-    @PrimaryKey
     @Column({
         type: DataType.BIGINT,
         allowNull: false
     })
     declare lineuniquekey: number;
+
+    @Column(DataType.BIGINT)
+    declare lineorder: number;
 
     @Column(DataType.STRING)
     declare item: string;
@@ -69,8 +78,8 @@ export default class VendorInvoiceLineStaging extends Model {
     declare location: string;
 
     @Column(DataType.DATE)
-    declare created_at: Date;
+    declare createddate: Date;
 
     @Column(DataType.DATE)
-    declare updated_at: Date;
+    declare lastmodifieddate: Date;
 }

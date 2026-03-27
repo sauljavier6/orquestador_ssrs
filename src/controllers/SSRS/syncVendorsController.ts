@@ -1,10 +1,9 @@
 // src/controllers/vendors.controller.ts
-
-import { getNetSuiteConnection } from "../config/odbc";
-import SyncControl from "../models/SyncControl";
-import VendorStaging from "../models/VendorStaging";
-import sequelize from "../config/database";
 import { QueryTypes } from "sequelize";
+import VendorStaging from "../../models/SSRS/VendorStaging";
+import sequelizeSSRS from "../../config/dbSSRS";
+import SyncControl from "../../models/SSRS/SyncControl";
+import { getNetSuiteConnection } from "../../config/odbc";
 
 type MergeStats = {
   inserted: number;
@@ -42,7 +41,7 @@ async function executeMergeWithRetry(maxRetries = 3): Promise<MergeStats> {
 
   while (attempts < maxRetries) {
     try {
-      const result = await sequelize.query(
+      const result = await sequelizeSSRS.query(
         "EXEC sp_merge_vendors",
         { type: QueryTypes.SELECT }
       );
@@ -76,7 +75,7 @@ export const syncVendors = async (req: any, res: any) => {
     console.log("Iniciando sincronización vendors enterprise...");
 
     //Lock y watchdog
-    const transaction = await sequelize.transaction();
+    const transaction = await sequelizeSSRS.transaction();
     const sync = await SyncControl.findOne({
       where: { process_name: "vendor" },
       transaction,

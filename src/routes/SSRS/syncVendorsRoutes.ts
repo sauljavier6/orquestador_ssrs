@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { syncVendors } from "../controllers/syncVendorsController";
+import { syncVendors } from "../../controllers/SSRS/syncVendorsController";
 
 const router = Router();
 

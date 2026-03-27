@@ -1,5 +1,5 @@
 // src/config/netsuite.ts
-import odbc from "odbc";
+import * as odbc from "odbc";
 import dotenv from "dotenv";
 
 dotenv.config();

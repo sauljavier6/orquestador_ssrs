@@ -11,7 +11,7 @@ export default class SyncControl extends Model {
     type: DataType.STRING(100),
     allowNull: false
   })
-  declare process_name: string;   // ejemplo: 'vendors'
+  declare process_name: string;
 
   @Column({
     type: DataType.DATE,

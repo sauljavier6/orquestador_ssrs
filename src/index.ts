@@ -1,12 +1,13 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import sequelize from "./config/database";
+import sequelizeSSRS from "./config/dbSSRS";
+import sequelizeFP from "./config/dbCobranzaPro";
 import indexRoutes from './routes/index';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
-import path from "path"; 
-import "./workers/ssrs.worker.ts";
+import path from "path";
+import "./workers";
 
 dotenv.config();
 const FRONTEND = process.env.FRONTEND_ORIGINS;
@@ -31,9 +32,26 @@ app.use('/api', indexRoutes);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4580;
 
-sequelize.sync({ alter: true }).then(() => {
-  console.log("✅ Base de datos conectada");
-  app.listen(PORT, '0.0.0.0',() => {
-    console.log(`Servidor corriendo en http://localhost:${PORT}`);
-  });
-}).catch((err: any) => console.error("❌ Error al conectar BD:", err));
+async function startServer() {
+  try {
+
+    await sequelizeSSRS.authenticate();
+    await sequelizeFP.authenticate();
+
+    console.log("✅ Conexiones a SQL Server OK");
+
+    await sequelizeSSRS.sync({ alter: true });
+    await sequelizeFP.sync({ alter: true });
+
+    console.log("✅ Tablas sincronizadas");
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Servidor corriendo en http://localhost:${PORT}`);
+    });
+
+  } catch (error) {
+    console.error("❌ Error al iniciar:", error);
+  }
+}
+
+startServer();

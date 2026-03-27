@@ -1,19 +1,21 @@
+//database.ts
+
 import { Sequelize } from "sequelize-typescript";
 import dotenv from "dotenv";
 
-import SyncControl from "../models/SyncControl";
-import Vendor from "../models/Vendor";
-import VendorStaging from "../models/VendorStaging";
-import VendorInvoiceStaging from "../models/VendorInvoiceStaging";
-import VendorInvoice from "../models/VendorInvoice";
-import VendorInvoiceLine from "../models/VendorInvoiceLine";
-import VendorInvoiceLineStaging from "../models/VendorInvoiceLineStaging";
-import VendorInvoicePaymentStaging from "../models/VendorInvoicePaymentStaging";
-import VendorInvoicePayment from "../models/VendorInvoicePayment";
+import SyncControl from "../models/SSRS/SyncControl";
+import Vendor from "../models/SSRS/Vendor";
+import VendorStaging from "../models/SSRS/VendorStaging";
+import VendorInvoiceStaging from "../models/SSRS/VendorInvoiceStaging";
+import VendorInvoice from "../models/SSRS/VendorInvoice";
+import VendorInvoiceLine from "../models/SSRS/VendorInvoiceLine";
+import VendorInvoiceLineStaging from "../models/SSRS/VendorInvoiceLineStaging";
+import VendorInvoicePaymentStaging from "../models/SSRS/VendorInvoicePaymentStaging";
+import VendorInvoicePayment from "../models/SSRS/VendorInvoicePayment";
 
 dotenv.config();
 
-const sequelize = new Sequelize({
+const sequelizeSSRS = new Sequelize({
   dialect: "mssql",
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT) || 1433,
@@ -53,4 +55,4 @@ const sequelize = new Sequelize({
   benchmark: true
 });
 
-export default sequelize;
+export default sequelizeSSRS;

@@ -1,6 +1,6 @@
 // src/workers/upc.worker.ts
 import cron from "node-cron";
-import { syncVendorsService } from "../services/syncVendors.services";
+import { syncVendorsService } from "../../services/SSRS/syncVendors.services";
 
 console.log("Worker iniciado", new Date().toLocaleString());
 

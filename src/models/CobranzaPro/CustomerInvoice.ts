@@ -7,10 +7,10 @@ import {
 } from "sequelize-typescript";
 
 @Table({
-  tableName: "VendorInvoiceStaging",
+  tableName: "CustomerInvoice",
   timestamps: false
 })
-export default class VendorInvoiceStaging extends Model {
+export default class CustomerInvoice extends Model {
 
   @PrimaryKey
   @Column(DataType.BIGINT)
@@ -53,22 +53,10 @@ export default class VendorInvoiceStaging extends Model {
   declare location: string;
 
   @Column(DataType.STRING)
-  declare purchaseorder: string;
-
-  @Column(DataType.DATE)
-  declare fechapago: Date;
-
-  @Column(DataType.STRING)
   declare tipocompra: string;
 
   @Column(DataType.STRING)
   declare estatuspresupuesto: string;
-
-  @Column(DataType.STRING)
-  declare causadevolucionproveedor: string;
-
-  @Column(DataType.DATE)
-  declare fechacancelacion: Date;
 
   @Column(DataType.DATE)
   declare lastmodifieddate: Date;

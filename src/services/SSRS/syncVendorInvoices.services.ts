@@ -1,12 +1,12 @@
 // src/controllers/vendors.controller.ts
-
-import { getNetSuiteConnection } from "../config/odbc";
-import SyncControl from "../models/SyncControl";
-import sequelize from "../config/database";
 import { QueryTypes } from "sequelize";
-import VendorInvoiceStaging from "../models/VendorInvoiceStaging";
-import VendorInvoiceLineStaging from "../models/VendorInvoiceLineStaging";
-import VendorInvoicePaymentStaging from "../models/VendorInvoicePaymentStaging";
+import VendorInvoiceStaging from "../../models/SSRS/VendorInvoiceStaging";
+import sequelizeSSRS from "../../config/dbSSRS";
+import SyncControl from "../../models/SSRS/SyncControl";
+import VendorInvoiceLineStaging from "../../models/SSRS/VendorInvoiceLineStaging";
+import { getNetSuiteConnection } from "../../config/odbc";
+import VendorInvoicePaymentStaging from "../../models/SSRS/VendorInvoicePaymentStaging";
+
 
 type MergeStats = {
   inserted: number;
@@ -20,6 +20,32 @@ function serializeBigInt(data: any) {
     )
   );
 }
+
+//Helper para reconexion 
+async function queryWithReconnect(cn: any, query: string, retries = 2) {
+  try {
+    const result = await cn.query(query);
+    return { result, connection: cn };
+
+  } catch (error: any) {
+
+    if (error?.odbcErrors?.[0]?.state === "08S01" && retries > 0) {
+
+      console.warn(`💀 ODBC murió, reintentando (${retries})...`);
+
+      try { await cn.close(); } catch { }
+
+      const newConnection = await getNetSuiteConnection();
+
+      return queryWithReconnect(newConnection, query, retries - 1);
+    }
+
+    throw error;
+  }
+}
+
+
+//Listooooooooooooooooooo
 // Helper retry por batch
 async function bulkInsertWithRetry(batch: any[], maxRetries = 3) {
   const chunkSize = 200; // puedes ajustar según tu DB y tamaño de batch
@@ -56,7 +82,7 @@ async function executeMergeWithRetry(maxRetries = 3): Promise<MergeStats> {
 
   while (attempts < maxRetries) {
     try {
-      const result = await sequelize.query(
+      const result = await sequelizeSSRS.query(
         "EXEC sp_merge_vendorInvoices",
         { type: QueryTypes.SELECT }
       );
@@ -82,7 +108,7 @@ async function executeMergeWithRetry(maxRetries = 3): Promise<MergeStats> {
   throw new Error("Merge SP falló después de todos los intentos");
 }
 // src/controllers/vendors.controller.ts
-export const syncVendorInvoices = async (req: any, res: any) => {
+export const syncVendorInvoices = async () => {
   let cn;
   const startTime = new Date();
 
@@ -90,7 +116,7 @@ export const syncVendorInvoices = async (req: any, res: any) => {
     console.log("Iniciando sincronización vendors invoices enterprise...");
 
     // LOCK
-    const transaction = await sequelize.transaction();
+    const transaction = await sequelizeSSRS.transaction();
     const sync = await SyncControl.findOne({
       where: { process_name: "vendorinvoice" },
       transaction,
@@ -105,10 +131,10 @@ export const syncVendorInvoices = async (req: any, res: any) => {
       (Date.now() - new Date(sync.updated_at).getTime()) / 60000 < 10
     ) {
       await transaction.rollback();
-      return res.status(200).json({
+      return {
         success: false,
         message: "Proceso en ejecución"
-      });
+      };
     }
 
     await SyncControl.update(
@@ -120,8 +146,15 @@ export const syncVendorInvoices = async (req: any, res: any) => {
     // NETSUITE
     cn = await getNetSuiteConnection();
 
-    let lastSyncDate = sync.last_sync_date || new Date("2024-01-01");
+    let lastSyncDate: string;
+
+    lastSyncDate = sync.last_sync_date
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+
     let lastId = sync.last_internal_id || 0;
+    let lastDateIds: number[] = [];
 
     const batchSize = 1000;
     let totalFetched = 0;
@@ -129,14 +162,14 @@ export const syncVendorInvoices = async (req: any, res: any) => {
     let resultadostest;
 
     while (hasMore) {
-      const safeDate = new Date(lastSyncDate.getTime() - 5 * 60000);
-      const formattedDate = safeDate
-        .toISOString()
-        .slice(0, 19)   // 'YYYY-MM-DDTHH:MM:SS'
-        .replace("T", " "); // 'YYYY-MM-DD HH:MM:SS'
 
-      console.log('formattedDate', formattedDate)
-      console.log('lastId', lastId)
+      const formattedDate = lastSyncDate.trim();
+      console.log('Iniciando sync con fecha:', formattedDate)
+
+      const idsFilter =
+        lastDateIds.length > 0
+          ? `AND t.id NOT IN (${lastDateIds.join(",")})`
+          : "";
 
       // Query paginada por batch
       const query = `
@@ -166,10 +199,9 @@ export const syncVendorInvoices = async (req: any, res: any) => {
             ON t.id = tl.transaction
             AND tl.mainline = 'T'
         WHERE t.type = 'VendBill'
-        AND (
-              t.lastmodifieddate > {ts '${formattedDate}'}
-              OR (t.lastmodifieddate = {ts '${formattedDate}'} AND t.id > ${lastId})
-            )
+        AND t.voided = 'F'
+        AND t.lastmodifieddate >= {ts '${formattedDate}'}  
+        ${idsFilter}
         ORDER BY t.lastmodifieddate ASC, t.id ASC
       `;
 
@@ -237,7 +269,18 @@ export const syncVendorInvoices = async (req: any, res: any) => {
       // Actualizamos lastId y totalFetched
       const lastRecord = cleanResult[cleanResult.length - 1];
       lastId = lastRecord.id;
-      lastSyncDate = new Date(lastRecord.lastmodifieddate);
+      lastSyncDate = lastRecord.lastmodifieddate;
+
+      const lastDateTime = new Date(lastSyncDate).getTime();
+
+      console.log('fecha netsuite', lastRecord.lastmodifieddate, 'ULTIMO ID', lastId)
+      console.log('fecha lastDateTime', lastDateTime)
+
+      // Filtrar TODOS los IDs que tengan esa misma fecha
+      lastDateIds = cleanResult
+        .filter((r: any) => r.lastmodifieddate === lastSyncDate)
+        .map((r: any) => r.id);
+
       totalFetched += cleanResult.length;
       console.log(`Batch procesado: ${cleanResult.length} registros`);
     }
@@ -269,13 +312,13 @@ export const syncVendorInvoices = async (req: any, res: any) => {
       { where: { process_name: "vendorinvoice" } }
     );
 
-    return res.status(200).json({
+    return {
       success: true,
       total: totalFetched,
       duration,
       mergeStats: mergeResult,
       resultadostest
-    });
+    }
 
   } catch (error: any) {
 
@@ -291,10 +334,10 @@ export const syncVendorInvoices = async (req: any, res: any) => {
       { where: { process_name: "vendorinvoice" } }
     );
 
-    return res.status(500).json({
+    return {
       success: false,
       error: error.message
-    });
+    };
 
   } finally {
     if (cn) {
@@ -304,6 +347,8 @@ export const syncVendorInvoices = async (req: any, res: any) => {
   }
 };
 
+
+//Listooooooooooooooooooo
 // Helper retry por batch
 async function bulkInsertWithRetryForLines(batch: any[], maxRetries = 3) {
 
@@ -344,7 +389,7 @@ async function executeMergeWithRetryForLines(maxRetries = 3): Promise<MergeStats
 
   while (attempts < maxRetries) {
     try {
-      const result = await sequelize.query(
+      const result = await sequelizeSSRS.query(
         "EXEC sp_merge_vendorInvoiceLines",
         { type: QueryTypes.SELECT }
       );
@@ -370,7 +415,7 @@ async function executeMergeWithRetryForLines(maxRetries = 3): Promise<MergeStats
   throw new Error("Merge SP falló después de todos los intentos");
 }
 //endpoint para lineas de facturas
-export const syncVendorInvoiceLines = async (req: any, res: any) => {
+export const syncVendorInvoiceLines = async () => {
   let cn;
   const startTime = new Date();
 
@@ -379,7 +424,7 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
     console.log("Iniciando sincronización vendor invoice lines...");
 
     // LOCK
-    const transaction = await sequelize.transaction();
+    const transaction = await sequelizeSSRS.transaction();
 
     const sync = await SyncControl.findOne({
       where: { process_name: "vendorinvoicelines" },
@@ -395,10 +440,10 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
       (Date.now() - new Date(sync.updated_at).getTime()) / 60000 < 10
     ) {
       await transaction.rollback();
-      return res.status(200).json({
+      return {
         success: false,
         message: "Proceso en ejecución"
-      });
+      };
     }
 
     await SyncControl.update(
@@ -411,35 +456,32 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
     // NETSUITE CONNECTION
     cn = await getNetSuiteConnection();
 
-    let lastSyncDate = sync.last_sync_date || new Date("2024-01-01");
+    let lastSyncDate: string;
+
+    lastSyncDate = sync.last_sync_date
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+
     let lastId = sync.last_internal_id || 0;
 
-    const batchSize = 500;
+    const batchSize = 1000;
 
     let totalFetched = 0;
     let hasMore = true;
 
     while (hasMore) {
-
-      const safeDate = new Date(lastSyncDate.getTime() - 5 * 60000);
-
-      const formattedDate = safeDate
-        .toISOString()
-        .slice(0, 19)
-        .replace("T", " ");
-
-      console.log("formattedDate", formattedDate);
-      console.log("lastId", lastId);
+      const formattedDate = lastSyncDate.trim();
+      console.log('Iniciando sync con fecha:', formattedDate)
 
       const query = `
         SELECT TOP ${batchSize}
-
-            tl.id AS lineuniquekey,
+            tl.uniquekey AS lineuniquekey,
             tl.transaction AS vendor_invoice_id,
 
+            tl.id AS lineorder,
             BUILTIN.DF(tl.item) AS item,
             tl.memo AS description,
-           
 
             tl.quantity,
             BUILTIN.DF(tl.units) AS units,
@@ -447,7 +489,7 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
             tl.rate,
             tl.netamount AS amount,
 
-            tl.taxcode,
+            BUILTIN.DF(tl.taxcode) AS taxcode,
 
             tl.ratepercent,
             tl.taxtype,
@@ -458,33 +500,33 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
             BUILTIN.DF(tl.class) AS class,
             BUILTIN.DF(tl.location) AS location,
 
-            t.createddate AS created_at,
-            t.lastmodifieddate AS updated_at
+            t.createddate AS createddate,
+            t.lastmodifieddate AS lastmodifieddate
 
         FROM transactionline tl
-
         JOIN transaction t
             ON t.id = tl.transaction
-
         WHERE t.type = 'VendBill'
         AND tl.mainline = 'F'
-
-        AND (
+        AND tl.item <> 34452
+        AND 
+         (
             t.lastmodifieddate > {ts '${formattedDate}'}
             OR (
                 t.lastmodifieddate = {ts '${formattedDate}'}
-                AND tl.id > ${lastId}
+                AND tl.uniquekey > ${lastId}
             )
         )
-
         ORDER BY
-            t.lastmodifieddate ASC,
-            tl.id ASC
+            t.lastmodifieddate ASC, tl.uniquekey ASC
       `;
 
       console.log("Ejecutando query batch...");
 
-      const result = await cn.query(query);
+      const response = await queryWithReconnect(cn, query);
+
+      const result = response.result;
+      cn = response.connection;
 
       const cleanResult = serializeBigInt(result);
 
@@ -496,6 +538,8 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
       const batch = cleanResult.map((l: any) => ({
 
         lineuniquekey: Number(l.lineuniquekey),
+
+        lineorder: Number(l.lineorder),
 
         vendor_invoice_id: Number(l.vendor_invoice_id),
 
@@ -519,22 +563,21 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
         class: l.class || "",
         location: l.location || "",
 
-        created_at: l.created_at ? new Date(l.created_at) : null,
-        updated_at: l.updated_at ? new Date(l.updated_at) : null
-
+        createddate: l.createddate,
+        lastmodifieddate: l.lastmodifieddate,
       }));
 
       await bulkInsertWithRetryForLines(batch);
 
       const lastRecord = cleanResult[cleanResult.length - 1];
+      lastId = lastRecord.lineuniquekey;
+      lastSyncDate = lastRecord.lastmodifieddate;
 
-      lastId = Number(lastRecord.lineuniquekey);
-      lastSyncDate = new Date(lastRecord.updated_at);
+      console.log('fecha netsuite', lastRecord.lastmodifieddate, 'ULTIMO ID', lastId)
 
       totalFetched += cleanResult.length;
 
       console.log(`Batch procesado: ${cleanResult.length} registros`);
-      console.log(`Cursor -> date:${lastSyncDate.toISOString()} line:${lastId}`);
     }
 
     console.log("Todos los datos cargados en staging (lines)");
@@ -563,11 +606,11 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
       { where: { process_name: "vendorinvoicelines" } }
     );
 
-    return res.status(200).json({
+    return {
       success: true,
       total: totalFetched,
       duration
-    });
+    };
 
   } catch (error: any) {
 
@@ -583,10 +626,10 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
       { where: { process_name: "vendorinvoicelines" } }
     );
 
-    return res.status(500).json({
+    return {
       success: false,
       error: error.message
-    });
+    };
 
   } finally {
 
@@ -599,8 +642,7 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
 };
 
 
-
-
+//Listooooooooooooooooooo
 // Helper retry por batch
 async function bulkInsertWithRetryForPayments(batch: any[], maxRetries = 3) {
 
@@ -641,7 +683,7 @@ async function executeMergeWithRetryForPayments(maxRetries = 3): Promise<MergeSt
 
   while (attempts < maxRetries) {
     try {
-      const result = await sequelize.query(
+      const result = await sequelizeSSRS.query(
         "EXEC sp_merge_vendorInvoicePayments",
         { type: QueryTypes.SELECT }
       );
@@ -667,7 +709,7 @@ async function executeMergeWithRetryForPayments(maxRetries = 3): Promise<MergeSt
   throw new Error("Merge SP falló después de todos los intentos");
 }
 //endpoint para pagos de facturas
-export const syncVendorInvoicePayments = async (req: any, res: any) => {
+export const syncVendorInvoicePayments = async () => {
   let cn;
   const startTime = new Date();
 
@@ -676,7 +718,7 @@ export const syncVendorInvoicePayments = async (req: any, res: any) => {
     console.log("Iniciando sincronización vendor invoice payments...");
 
     // LOCK
-    const transaction = await sequelize.transaction();
+    const transaction = await sequelizeSSRS.transaction();
 
     const sync = await SyncControl.findOne({
       where: { process_name: "vendorinvoicepayments" },
@@ -692,10 +734,10 @@ export const syncVendorInvoicePayments = async (req: any, res: any) => {
       (Date.now() - new Date(sync.updated_at).getTime()) / 60000 < 10
     ) {
       await transaction.rollback();
-      return res.status(200).json({
+      return {
         success: false,
         message: "Proceso en ejecución"
-      });
+      };
     }
 
     await SyncControl.update(
@@ -708,7 +750,13 @@ export const syncVendorInvoicePayments = async (req: any, res: any) => {
     // NETSUITE CONNECTION
     cn = await getNetSuiteConnection();
 
-    let lastSyncDate = sync.last_sync_date || new Date("2024-01-01");
+    let lastSyncDate: string;
+
+    lastSyncDate = sync.last_sync_date
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+
     let lastId = sync.last_internal_id || 0;
 
     const batchSize = 1500;
@@ -717,64 +765,67 @@ export const syncVendorInvoicePayments = async (req: any, res: any) => {
     let hasMore = true;
 
     while (hasMore) {
-
-      const safeDate = new Date(lastSyncDate.getTime() - 5 * 60000);
-
-      const formattedDate = safeDate
-        .toISOString()
-        .slice(0, 19)
-        .replace("T", " ");
-
-      console.log("formattedDate", formattedDate);
-      console.log("lastId", lastId);
+      const formattedDate = lastSyncDate.trim();
+      console.log('Iniciando sync con fecha:', formattedDate)
 
       const query = `
         SELECT TOP ${batchSize}
-            pay.id AS payment_id,
-            pay.tranid AS payment_number,
-            pay.trandate AS payment_date,
-            pay.entity AS vendor,
-            pay.currency,
-            pay.foreignpaymentamountused AS payment_total,
-            pay.foreignpaymentamountunused AS balance, 
-            pay.lastmodifieddate AS payment_lastmodified,
-            pay.status AS payment_status,
 
-            grp.id AS payment_group_id,
-            grp.custrecord_nsvp_app_date AS date_group,
+            cb.id                        AS link_id,
+            p.id                         AS payment_id,
+            b.id                         AS invoice_id,
 
-            bills.custrecord_paying_bill AS invoice_id,
-            bills.custrecord_amountremaining AS amount_applied_to_invoice,
-            bills.custrecord_trandate_bill AS invoice_date,
-            bills.custrecord_duedate_bill AS invoice_due_date
+            p.tranid                     AS payment_tranid,
+            p.trandate                   AS payment_trandate,
+            p.foreignpaymentamountused   AS foreigntotal,
+            BUILTIN.DF(p.currency)       AS currency,
+            p.foreignpaymentamountunused AS balance,
+            p.lastmodifieddate           AS payment_lastmodified,
+            p.status                     AS payment_status,
 
-        FROM transaction pay
-        LEFT JOIN customrecord_aplicacion_pagos grp
-            ON grp.id = pay.custbody_nso_payment_group_ref
-        LEFT JOIN customrecord_ap_pagos_bills bills
-            ON bills.custrecord_ap_pago_parent = grp.id
-        WHERE
-            pay.type = 'VendPymt'
-            --AND pay.id = 59988068
-            AND (
-                pay.lastmodifieddate > {ts '${formattedDate}'}
-                OR (
-                    pay.lastmodifieddate = {ts '${formattedDate}'}
-                    AND pay.id > ${lastId}
-                )
+            b.entity                     AS vendor,
+            
+            b.tranid                     AS invoice_tranid,
+            b.trandate                   AS invoice_trandate,
+            b.duedate                    AS invoice_duedate,
+
+            cb.custrecord_amountremaining,
+            cb.lastmodified              AS link_lastmodified
+
+        FROM transaction p
+
+        JOIN customrecord_ap_pagos_bills cb
+            ON cb.custrecord_vendorpayment = p.id
+
+        JOIN transaction b
+            ON b.id = cb.custrecord_paying_bill
+          AND b.type = 'VendBill'
+
+        WHERE p.type = 'VendPymt'
+        AND p.voided = 'F'
+        AND p.memo NOT LIKE '%DONACION%'
+        AND p.id = 76850695
+        AND (
+            cb.lastmodified > {ts '${formattedDate}'}
+            OR (
+                cb.lastmodified = {ts '${formattedDate}'}
+                AND cb.id > ${lastId}
             )
+        )
+
         ORDER BY
-            pay.lastmodifieddate ASC,
-            pay.id ASC
+            cb.lastmodified ASC,
+            cb.id ASC
       `;
 
       console.log("Ejecutando query batch...");
 
-      const result = await cn.query(query);
+      const response = await queryWithReconnect(cn, query);
+
+      const result = response.result;
+      cn = response.connection;
 
       const cleanResult = serializeBigInt(result);
-
-      console.log(cleanResult[0])
 
       if (cleanResult.length === 0) {
         hasMore = false;
@@ -783,46 +834,45 @@ export const syncVendorInvoicePayments = async (req: any, res: any) => {
 
       const batch = cleanResult.map((l: any) => ({
         // Claves primarias
+        link_id: l.link_id,
         payment_id: l.payment_id,
+        invoice_id: l.invoice_id,
 
-        // Datos de pago
-        payment_number: l.payment_number,
-        payment_date: l.payment_date ? new Date(l.payment_date) : null,
-        vendor: l.vendor != null ? Number(l.vendor) : 0,
-        currency: l.currency ?? "",
-        payment_total: l.payment_total != null ? Number(l.payment_total) : 0,
-        balance: l.balance != null ? Number(l.balance) : 0,
-        payment_status: l.payment_status ?? "",  // 👈 estatus agregado
+        // Información del pago
+        payment_tranid: l.payment_tranid,
+        payment_trandate: l.payment_trandate,
+        foreigntotal: l.foreigntotal,
+        balance: l.balance,
+        currency: l.currency,
+        payment_status: l.payment_status,
+        payment_lastmodified: l.payment_lastmodified,
 
-        // Grupo de pago
-        payment_group_id: l.payment_group_id != null ? Number(l.payment_group_id) : 0,
-        date_group: l.date_group ? new Date(l.date_group) : null, // 👈 fecha del grupo de pago
+        // Vendor
+        vendor: l.vendor,
 
-        // Aplicaciones de pago
-        invoice_id: l.invoice_id != null ? Number(l.invoice_id) : 0,
-        amount_applied_to_invoice: l.amount_applied_to_invoice != null ? Number(l.amount_applied_to_invoice) : 0,
-        invoice_date: l.invoice_date ? new Date(l.invoice_date) : null,
-        invoice_due_date: l.invoice_due_date ? new Date(l.invoice_due_date) : null,
+        // Información de la factura
+        invoice_tranid: l.invoice_tranid,
+        invoice_trandate: l.invoice_trandate,
+        invoice_duedate: l.invoice_duedate,
 
-        // Fecha de última modificación
-        payment_lastmodified: l.payment_lastmodified ? new Date(l.payment_lastmodified) : new Date(),
-
-        // Fechas de control
-        created_at: l.created_at ? new Date(l.created_at) : new Date(),
-        updated_at: l.updated_at ? new Date(l.updated_at) : new Date()
+        // Amount remaining en el custom record
+        custrecord_amountremaining: l.custrecord_amountremaining,
+        link_lastmodified: l.link_lastmodified,
       }));
 
       await bulkInsertWithRetryForPayments(batch);
 
       const lastRecord = cleanResult[cleanResult.length - 1];
 
-      lastId = Number(lastRecord.payment_id);
-      lastSyncDate = new Date(lastRecord.payment_lastmodified);
+      // Cursor para siguiente batch
+      lastId = lastRecord.link_id;
+      lastSyncDate = lastRecord.link_lastmodified;
+      console.log('fecha netsuite', lastRecord.link_id)
 
       totalFetched += cleanResult.length;
 
       console.log(`Batch procesado: ${cleanResult.length} registros`);
-      console.log(`Cursor -> date:${lastSyncDate.toISOString()} line:${lastId}`);
+      console.log(`Cursor -> date:${lastSyncDate} line:${lastId}`);
     }
 
     console.log("Todos los datos cargados en staging (payments)");
@@ -851,11 +901,11 @@ export const syncVendorInvoicePayments = async (req: any, res: any) => {
       { where: { process_name: "vendorinvoicepayments" } }
     );
 
-    return res.status(200).json({
+    return {
       success: true,
       total: totalFetched,
       duration
-    });
+    };
 
   } catch (error: any) {
 
@@ -871,10 +921,298 @@ export const syncVendorInvoicePayments = async (req: any, res: any) => {
       { where: { process_name: "vendorinvoicepayments" } }
     );
 
-    return res.status(500).json({
+    return {
       success: false,
       error: error.message
+    };
+
+  } finally {
+
+    if (cn) {
+      await cn.close();
+      console.log("ODBC cerrado");
+    }
+
+  }
+};
+
+
+// Helper retry por batch
+async function bulkInsertWithRetryForCreditMemo(batch: any[], maxRetries = 3) {
+
+  const chunkSize = 100;
+
+  for (let i = 0; i < batch.length; i += chunkSize) {
+
+    const chunk = batch.slice(i, i + chunkSize);
+
+    let attempts = 0;
+
+    while (attempts < maxRetries) {
+      try {
+
+        await VendorInvoicePaymentStaging.bulkCreate(chunk, {
+          validate: false,
+          returning: false
+        });
+
+        break;
+
+      } catch (err) {
+
+        attempts++;
+
+        console.warn(`Bulk insert fallo intento ${attempts}:`, err);
+
+        if (attempts >= maxRetries) throw err;
+
+        await new Promise(r => setTimeout(r, 1000 * attempts));
+      }
+    }
+  }
+}
+// Helper retry para sp
+async function executeMergeWithRetryForCreditMemo(maxRetries = 3): Promise<MergeStats> {
+  let attempts = 0;
+
+  while (attempts < maxRetries) {
+    try {
+      const result = await sequelizeSSRS.query(
+        "EXEC sp_merge_vendorInvoicePayments",
+        { type: QueryTypes.SELECT }
+      );
+
+      // Tomamos el primer objeto y hacemos cast a MergeStats
+      const mergeResult = Array.isArray(result) && result.length > 0
+        ? (result[0] as unknown as MergeStats)
+        : { inserted: 0, updated: 0 };
+
+      // Aseguramos que sean números
+      return {
+        inserted: Number(mergeResult.inserted) || 0,
+        updated: Number(mergeResult.updated) || 0,
+      };
+    } catch (err) {
+      attempts++;
+      console.warn(`Merge SP fallo en intento ${attempts}: ${err}`);
+      if (attempts === maxRetries) throw err;
+      await new Promise(res => setTimeout(res, 1000 * attempts)); // espera exponencial
+    }
+  }
+
+  throw new Error("Merge SP falló después de todos los intentos");
+}
+//endpoint para pagos de facturas
+export const syncVendorInvoiceCreditMemo = async () => {
+  let cn;
+  const startTime = new Date();
+
+  try {
+
+    console.log("Iniciando sincronización vendor invoice payments...");
+
+    // LOCK
+    const transaction = await sequelizeSSRS.transaction();
+
+    const sync = await SyncControl.findOne({
+      where: { process_name: "vendorinvoicepayments" },
+      transaction,
+      lock: transaction.LOCK.UPDATE
     });
+
+    if (!sync) throw new Error("No existe registro en SyncControl");
+
+    if (
+      sync.is_running &&
+      sync.updated_at &&
+      (Date.now() - new Date(sync.updated_at).getTime()) / 60000 < 10
+    ) {
+      await transaction.rollback();
+      return {
+        success: false,
+        message: "Proceso en ejecución"
+      };
+    }
+
+    await SyncControl.update(
+      { is_running: true, updated_at: new Date() },
+      { where: { process_name: "vendorinvoicepayments" }, transaction }
+    );
+
+    await transaction.commit();
+
+    // NETSUITE CONNECTION
+    cn = await getNetSuiteConnection();
+
+    let lastSyncDate: string;
+
+    lastSyncDate = sync.last_sync_date
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+
+    let lastId = sync.last_internal_id || 0;
+
+    const batchSize = 1500;
+
+    let totalFetched = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+
+      const formattedDate = lastSyncDate.trim();
+      console.log('Iniciando sync con fecha:', formattedDate)
+
+      const query = `
+        SELECT TOP ${batchSize}
+
+            cb.id                        AS link_id,
+            p.id                         AS payment_id,
+            b.id                         AS invoice_id,
+
+            p.tranid                     AS payment_tranid,
+            p.trandate                   AS payment_trandate,
+            p.foreignpaymentamountused   AS foreigntotal,
+            BUILTIN.DF(p.currency)       AS currency,
+            p.foreignpaymentamountunused AS balance,
+            p.lastmodifieddate           AS payment_lastmodified,
+            p.status                     AS payment_status,
+
+            b.entity                     AS vendor,
+            
+            b.tranid                     AS invoice_tranid,
+            b.trandate                   AS invoice_trandate,
+            b.duedate                    AS invoice_duedate,
+
+            cb.custrecord_amountremaining,
+            cb.lastmodified              AS link_lastmodified
+
+        FROM transaction p
+
+        JOIN customrecord_ap_pagos_bills cb
+            ON cb.custrecord_vendorpayment = p.id
+
+        JOIN transaction b
+            ON b.id = cb.custrecord_paying_bill
+          AND b.type = 'VendBill'
+
+        WHERE p.type = 'VendPymt'
+        AND p.voided = 'F'
+        AND p.memo NOT LIKE '%DONACION%'
+        AND (
+            cb.lastmodified > {ts '${formattedDate}'}
+            OR (
+                cb.lastmodified = {ts '${formattedDate}'}
+                AND cb.id > ${lastId}
+            )
+        )
+
+        ORDER BY
+            cb.lastmodified ASC,
+            cb.id ASC
+      `;
+
+      console.log("Ejecutando query batch...");
+
+      const result = await cn.query(query);
+
+      const cleanResult = serializeBigInt(result);
+
+      if (cleanResult.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      const batch = cleanResult.map((l: any) => ({
+        // Claves primarias
+        link_id: l.link_id,
+        payment_id: l.payment_id,
+        invoice_id: l.invoice_id,
+        // Información del pago
+        payment_tranid: l.payment_tranid,
+        payment_trandate: l.payment_trandate,
+        foreigntotal: l.foreigntotal,
+        balance: l.balance,
+        currency: l.currency,
+        payment_status: l.payment_status,
+        payment_lastmodified: l.payment_lastmodified,
+        // Vendor
+        vendor: l.vendor,
+        // Información de la factura
+        invoice_tranid: l.invoice_tranid,
+        invoice_trandate: l.invoice_trandate,
+        invoice_duedate: l.invoice_duedate,
+
+        // Amount remaining en el custom record
+        custrecord_amountremaining: l.custrecord_amountremaining,
+        link_lastmodified: l.link_lastmodified,
+      }));
+
+      await bulkInsertWithRetryForCreditMemo(batch);
+
+      const lastRecord = cleanResult[cleanResult.length - 1];
+
+      // Cursor para siguiente batch
+      lastId = lastRecord.link_id;
+      lastSyncDate = lastRecord.link_lastmodified;
+      console.log('fecha netsuite', lastRecord.link_lastmodified)
+
+      totalFetched += cleanResult.length;
+
+      console.log(`Batch procesado: ${cleanResult.length} registros`);
+      console.log(`Cursor -> date:${lastSyncDate} line:${lastId}`);
+    }
+
+    console.log("Todos los datos cargados en staging (payments)");
+
+    // MERGE
+    const mergeStart = new Date();
+    const mergeResult = await executeMergeWithRetryForCreditMemo();
+    const mergeEnd = new Date();
+
+    const duration = (mergeEnd.getTime() - startTime.getTime()) / 1000;
+    const mergeDuration = (mergeEnd.getTime() - mergeStart.getTime()) / 1000;
+
+    console.log(
+      `Merge completado: insert ${mergeResult.inserted} / update ${mergeResult.updated} en ${mergeDuration}s`
+    );
+
+    await SyncControl.update(
+      {
+        last_sync_date: lastSyncDate,
+        last_internal_id: lastId,
+        last_status: "SUCCESS",
+        last_message: `Sync payments completado en ${duration}s`,
+        updated_at: new Date(),
+        is_running: false
+      },
+      { where: { process_name: "vendorinvoicepayments" } }
+    );
+
+    return {
+      success: true,
+      total: totalFetched,
+      duration
+    };
+
+  } catch (error: any) {
+
+    console.error("Error en sincronización pagos:", error);
+
+    await SyncControl.update(
+      {
+        last_status: "FAILED",
+        last_message: error.message,
+        updated_at: new Date(),
+        is_running: false
+      },
+      { where: { process_name: "vendorinvoicepayments" } }
+    );
+
+    return {
+      success: false,
+      error: error.message
+    };
 
   } finally {
 
