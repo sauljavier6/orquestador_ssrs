@@ -58,9 +58,15 @@ export default class CustomerInvoice extends Model {
   @Column(DataType.STRING)
   declare estatuspresupuesto: string;
 
+  @Column(DataType.STRING)
+  declare uuid: string;
+
+  @Column(DataType.STRING)
+  declare idpdf: string;
+
   @Column(DataType.DATE)
   declare lastmodifieddate: Date;
 
-  @Column(DataType.BOOLEAN)
-  declare isinactive: boolean;
+  @Column(DataType.STRING)
+  declare isinactive: string;
 }

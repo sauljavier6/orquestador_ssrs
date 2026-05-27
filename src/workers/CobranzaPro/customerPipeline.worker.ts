@@ -1,26 +1,23 @@
 import cron from "node-cron";
-import sequelizeSSRS from "../../config/dbSSRS";
-import SyncControl from "../../models/SSRS/SyncControl";
+import { syncCustomerInvoiceLines, syncCustomerInvoicePayments, syncCustomerInvoices, syncCustomerPaymentAplication } from "../../services/CobranzaPro/syncCustomerInvoices.service";
+import SyncControl from "../../models/CobranzaPro/SyncControl";
+import sequelizeCP from "../../config/dbCobranzaPro";
+import { syncCustomers } from "../../services/CobranzaPro/syncCustomers.services";
 
-import { syncVendorInvoices } from "../../services/SSRS/syncVendorInvoices.services";
-import { syncVendorInvoiceLines } from "../../services/SSRS/syncVendorInvoices.services";
-import { syncVendorInvoicePayments } from "../../services/SSRS/syncVendorInvoices.services";
-import { syncVendors } from "../../services/SSRS/syncVendors.services";
-
-const PROCESS_NAME = "vendor_pipeline";
+const PROCESS_NAME = "customer_pipeline";
 
 cron.schedule(
-  "0 */2 * * *", // cada hora en el minuto 0
+  "*/30 * * * *", // cada 15 minutos
   async () => {
     let transaction;
 
     try {
-      console.log("🚀 Pipeline Vendor transactions iniciado");
+      console.log("🚀 Pipeline Customer transactions iniciado");
 
       // =========================
       // 🔒 LOCK
       // =========================
-      transaction = await sequelizeSSRS.transaction();
+      transaction = await sequelizeCP.transaction();
 
       const sync = await SyncControl.findOne({
         where: { process_name: PROCESS_NAME },
@@ -28,7 +25,7 @@ cron.schedule(
         lock: transaction.LOCK.UPDATE
       });
 
-      if (!sync) throw new Error("No existe vendor_pipeline en SyncControl");
+      if (!sync) throw new Error("No existe customer_pipeline en SyncControl");
 
       if (sync.is_running) {
         console.log("⛔ Pipeline ya corriendo, se omite");
@@ -55,21 +52,30 @@ cron.schedule(
       // =========================
       const globalStart = Date.now();
 
-      console.log("🧾 Invoices...");
-      const vendors = await syncVendors();
-      if (!vendors.success) throw new Error("Vendor Invoices falló");
+      console.log("🧾 Customer...");
+      const customer = await syncCustomers();
+      if (!customer.success) throw new Error("Customer falló");
 
       console.log("🧾 Invoices...");
-      const invoices = await syncVendorInvoices();
-      if (!invoices.success) throw new Error("Vendor Invoices falló");
+      const invoices = await syncCustomerInvoices();
+      if (!invoices.success) throw new Error("Customer Invoices falló");
+
+      console.log("📊 Calculando balances...");
+      const balanceStart = Date.now();
+      await sequelizeCP.query("EXEC sp_UpdateCustomerBalance");
+      console.log(`Balances calculados en ${(Date.now() - balanceStart) / 1000}s`);
 
       console.log("📦 Lines...");
-      const lines = await syncVendorInvoiceLines();
-      if (!lines.success) throw new Error("Vendor Lines falló");
+      const lines = await syncCustomerInvoiceLines();
+      if (!lines.success) throw new Error("Customer Lines falló");
 
       console.log("💰 Payments...");
-      const payments = await syncVendorInvoicePayments();
-      if (!payments.success) throw new Error("Vendor Payments falló");
+      const payments = await syncCustomerInvoicePayments();
+      if (!payments.success) throw new Error("Customer Payments falló");
+
+      console.log("💰 Aplication...");
+      const aplication = await syncCustomerPaymentAplication();
+      if (!aplication.success) throw new Error("Customer Payments Aplication falló");
 
       console.log(
         `🎯 Pipeline completo en ${(Date.now() - globalStart) / 1000}s`

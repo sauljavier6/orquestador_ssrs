@@ -11,6 +11,16 @@ import CustomerInvoiceLineStaging from "../models/CobranzaPro/CustomerInvoiceLin
 import CustomerInvoicePaymentStaging from "../models/CobranzaPro/CustomerInvoicePaymentStaging";
 import CustomerInvoicePayment from "../models/CobranzaPro/CustomerInvoicePayment";
 import SyncControl from "../models/CobranzaPro/SyncControl";
+import CustomerPaymentAplication from "../models/CobranzaPro/CustomerPaymentAplication";
+import CustomerPaymentAplicationStaging from "../models/CobranzaPro/CustomerPaymentAplicationStaging";
+import Notifications from "../models/CobranzaPro/Notifications";
+import Users from "../models/CobranzaPro/Users";
+import Rol from "../models/CobranzaPro/Rol";
+import Phone from "../models/CobranzaPro/Phone";
+import Email from "../models/CobranzaPro/Email";
+import TransactionType from "../models/CobranzaPro/TransactionType";
+import Campaign from "../models/CobranzaPro/Campaign";
+import NotificationReads from "../models/CobranzaPro/NotificationReads";
 
 dotenv.config();
 
@@ -25,7 +35,8 @@ const sequelizeCP = new Sequelize({
   models: [
   SyncControl,
   Customer, CustomerStaging, CustomerInvoice, CustomerInvoiceStaging, CustomerInvoiceLine, CustomerInvoiceLineStaging,
-  CustomerInvoicePaymentStaging, CustomerInvoicePayment
+  CustomerInvoicePaymentStaging, CustomerInvoicePayment, CustomerPaymentAplication, CustomerPaymentAplicationStaging, 
+  Notifications, Users, Rol, Phone, Email, TransactionType, Campaign, NotificationReads
   ],
 
   logging: false,

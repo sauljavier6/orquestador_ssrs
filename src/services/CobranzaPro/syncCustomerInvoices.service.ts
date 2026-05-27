@@ -108,7 +108,7 @@ async function executeMergeWithRetry(maxRetries = 3): Promise<MergeStats> {
     throw new Error("Merge SP falló después de todos los intentos");
 }
 // src/controllers/vendors.controller.ts
-export const syncCustomerInvoices = async (req: any, res: any) => {
+export const syncCustomerInvoices = async () => {
     let cn;
     const startTime = new Date();
 
@@ -131,10 +131,10 @@ export const syncCustomerInvoices = async (req: any, res: any) => {
             (Date.now() - new Date(sync.updated_at).getTime()) / 60000 < 10
         ) {
             await transaction.rollback();
-            return res.status(200).json({
+            return {
                 success: false,
                 message: "Proceso en ejecución"
-            });
+            };
         }
 
         await SyncControl.update(
@@ -297,11 +297,11 @@ export const syncCustomerInvoices = async (req: any, res: any) => {
             { where: { process_name: "customerinvoice" } }
         );
 
-        return res.status(200).json({
+        return {
             success: true,
             total: totalFetched,
             duration,
-        });
+        };
 
     } catch (error: any) {
 
@@ -317,10 +317,10 @@ export const syncCustomerInvoices = async (req: any, res: any) => {
             { where: { process_name: "customerinvoice" } }
         );
 
-        return res.status(500).json({
+        return {
             success: false,
             error: error.message
-        });
+        };
 
     } finally {
         if (cn) {
@@ -398,7 +398,7 @@ async function executeMergeWithRetryForLines(maxRetries = 3): Promise<MergeStats
     throw new Error("Merge SP falló después de todos los intentos");
 }
 //endpoint para lineas de facturas
-export const syncCustomerInvoiceLines = async (req: any, res: any) => {
+export const syncCustomerInvoiceLines = async () => {
     let cn;
     const startTime = new Date();
 
@@ -423,10 +423,10 @@ export const syncCustomerInvoiceLines = async (req: any, res: any) => {
             (Date.now() - new Date(sync.updated_at).getTime()) / 60000 < 10
         ) {
             await transaction.rollback();
-            return res.status(200).json({
+            return {
                 success: false,
                 message: "Proceso en ejecución"
-            });
+            };
         }
 
         await SyncControl.update(
@@ -486,8 +486,7 @@ export const syncCustomerInvoiceLines = async (req: any, res: any) => {
                 t.createddate AS createddate,
                 t.lastmodifieddate AS lastmodifieddate
             FROM transactionline tl
-            JOIN transaction t
-                ON t.id = tl.transaction
+            JOIN transaction t ON t.id = tl.transaction
             WHERE t.type = 'CustInvc'
             AND t.memorized = 'F'
             AND t.voided = 'F'
@@ -571,6 +570,7 @@ export const syncCustomerInvoiceLines = async (req: any, res: any) => {
         }
 
         console.log("Todos los datos cargados en staging (lines)");
+
         // MERGE
         const mergeStart = new Date();
         const mergeResult = await executeMergeWithRetryForLines();
@@ -599,11 +599,11 @@ export const syncCustomerInvoiceLines = async (req: any, res: any) => {
             { where: { process_name: "customerinvoicelines" } }
         );
 
-        return res.status(200).json({
+        return {
             success: true,
             total: totalFetched,
             duration
-        });
+        };
 
     } catch (error: any) {
 
@@ -619,10 +619,10 @@ export const syncCustomerInvoiceLines = async (req: any, res: any) => {
             { where: { process_name: "customerinvoicelines" } }
         );
 
-        return res.status(500).json({
+        return {
             success: false,
             error: error.message
-        });
+        };
 
     } finally {
 
@@ -702,7 +702,7 @@ async function executeMergeWithRetryForPayments(maxRetries = 3): Promise<MergeSt
     throw new Error("Merge SP falló después de todos los intentos");
 }
 //endpoint para pagos de facturas
-export const syncCustomerInvoicePayments = async (req: any, res: any) => {
+export const syncCustomerInvoicePayments = async () => {
     let cn;
     const startTime = new Date();
 
@@ -726,10 +726,10 @@ export const syncCustomerInvoicePayments = async (req: any, res: any) => {
             (Date.now() - new Date(sync.updated_at).getTime()) / 60000 < 10
         ) {
             await transaction.rollback();
-            return res.status(200).json({
+            return {
                 success: false,
                 message: "Proceso en ejecución"
-            });
+            };
         }
 
         await SyncControl.update(
@@ -886,7 +886,6 @@ export const syncCustomerInvoicePayments = async (req: any, res: any) => {
         await SyncControl.update(
             {
                 last_sync_date: new Date(),
-                //last_internal_id: lastId,
                 last_status: "SUCCESS",
                 last_message: `Sync payments completado en ${duration}s`,
                 updated_at: new Date(),
@@ -895,11 +894,11 @@ export const syncCustomerInvoicePayments = async (req: any, res: any) => {
             { where: { process_name: "customerinvoicepayments" } }
         );
 
-        return res.status(200).json({
+        return {
             success: true,
             total: totalFetched,
             duration
-        });
+        };
 
     } catch (error: any) {
 
@@ -915,10 +914,10 @@ export const syncCustomerInvoicePayments = async (req: any, res: any) => {
             { where: { process_name: "customerinvoicepayments" } }
         );
 
-        return res.status(500).json({
+        return {
             success: false,
             error: error.message
-        });
+        };
 
     } finally {
 
@@ -997,7 +996,7 @@ async function executeMergeWithRetryForPaymentAplication(maxRetries = 3): Promis
     throw new Error("Merge SP falló después de todos los intentos");
 }
 //endpoint para aplicacion de pagos
-export const syncCustomerPaymentAplication = async (req: any, res: any) => {
+export const syncCustomerPaymentAplication = async () => {
     let cn;
     const startTime = new Date();
 
@@ -1021,10 +1020,10 @@ export const syncCustomerPaymentAplication = async (req: any, res: any) => {
             (Date.now() - new Date(sync.updated_at).getTime()) / 60000 < 10
         ) {
             await transaction.rollback();
-            return res.status(200).json({
+            return {
                 success: false,
                 message: "Proceso en ejecución"
-            });
+            };
         }
 
         await SyncControl.update(
@@ -1058,7 +1057,8 @@ export const syncCustomerPaymentAplication = async (req: any, res: any) => {
         while (hasMore) {
 
             const formattedDate = lastSyncDate;
-            console.log(`Iniciando sync -> fecha: ${formattedDate}`);
+            console.log(
+                `Iniciando sync -> fecha: ${formattedDate}`);
 
             const query = `
                 SELECT TOP ${batchSize}
@@ -1147,7 +1147,9 @@ export const syncCustomerPaymentAplication = async (req: any, res: any) => {
         const duration = (mergeEnd.getTime() - startTime.getTime()) / 1000;
         const mergeDuration = (mergeEnd.getTime() - mergeStart.getTime()) / 1000;
 
-        console.log(`Merge completado: insert ${mergeResult.inserted} / update ${mergeResult.updated} en ${mergeDuration}s`);
+        console.log(
+            `Merge completado: insert ${mergeResult.inserted} / update ${mergeResult.updated} en ${mergeDuration}s`
+        );
 
         if (totalFetched === 0) {
             console.log("⚠️ No hubo datos, NO se actualiza last_sync_date");
@@ -1163,11 +1165,11 @@ export const syncCustomerPaymentAplication = async (req: any, res: any) => {
             { where: { process_name: "customerpaymentaplication" } }
         );
 
-        return res.status(200).json({
+        return {
             success: true,
             total: totalFetched,
             duration
-        });
+        };
 
     } catch (error: any) {
 
@@ -1183,10 +1185,10 @@ export const syncCustomerPaymentAplication = async (req: any, res: any) => {
             { where: { process_name: "customerpaymentaplication" } }
         );
 
-        return res.status(500).json({
+        return {
             success: false,
             error: error.message
-        });
+        };
 
     } finally {
 

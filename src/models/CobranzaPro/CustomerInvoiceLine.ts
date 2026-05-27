@@ -32,7 +32,7 @@ export default class CustomerInvoiceLine extends Model {
   @Column(DataType.STRING)
   declare item: string;
 
-  @Column(DataType.STRING)
+  @Column(DataType.TEXT)
   declare description: string;
 
   @Column(DataType.DECIMAL(18, 4))
@@ -46,6 +46,9 @@ export default class CustomerInvoiceLine extends Model {
 
   @Column(DataType.DECIMAL(18, 4))
   declare amount: number;
+
+  @Column(DataType.DECIMAL(18, 4))
+  declare descuento: number;
 
   @Column(DataType.STRING)
   declare taxcode: string;

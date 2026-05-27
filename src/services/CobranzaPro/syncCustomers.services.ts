@@ -1,9 +1,9 @@
 // src/controllers/vendors.controller.ts
 import { QueryTypes } from "sequelize";
-import VendorStaging from "../../models/SSRS/VendorStaging";
-import sequelizeSSRS from "../../config/dbSSRS";
-import SyncControl from "../../models/SSRS/SyncControl";
+import SyncControl from "../../models/CobranzaPro/SyncControl";
 import { getNetSuiteConnection } from "../../config/odbc";
+import sequelizeCP from "../../config/dbCobranzaPro";
+import CustomerStaging from "../../models/CobranzaPro/CustomerStaging";
 
 type MergeStats = {
   inserted: number;
@@ -24,7 +24,7 @@ async function bulkInsertWithRetry(batch: any[], maxRetries = 3) {
 
   while (attempts < maxRetries) {
     try {
-      await VendorStaging.bulkCreate(batch);
+      await CustomerStaging.bulkCreate(batch);
       return;
     } catch (err) {
       attempts++;
@@ -41,8 +41,8 @@ async function executeMergeWithRetry(maxRetries = 3): Promise<MergeStats> {
 
   while (attempts < maxRetries) {
     try {
-      const result = await sequelizeSSRS.query(
-        "EXEC sp_merge_vendors",
+      const result = await sequelizeCP.query(
+        "EXEC sp_merge_customers",
         { type: QueryTypes.SELECT }
       );
 
@@ -67,17 +67,17 @@ async function executeMergeWithRetry(maxRetries = 3): Promise<MergeStats> {
   throw new Error("Merge SP falló después de todos los intentos");
 }
 
-export const syncVendors = async () => {
+export const syncCustomers = async () => {
   let cn;
   const startTime = new Date();
 
   try {
-    console.log("Iniciando sincronización vendors enterprise...");
+    console.log("Iniciando sincronización customers enterprise...");
 
     //Lock y watchdog
-    const transaction = await sequelizeSSRS.transaction();
+    const transaction = await sequelizeCP.transaction();
     const sync = await SyncControl.findOne({
-      where: { process_name: "vendor" },
+      where: { process_name: "customer" },
       transaction,
       lock: transaction.LOCK.UPDATE
     });
@@ -93,11 +93,11 @@ export const syncVendors = async () => {
 
     await SyncControl.update(
       { is_running: true, updated_at: new Date() },
-      { where: { process_name: "vendor" }, transaction }
+      { where: { process_name: "customer" }, transaction }
     );
     await transaction.commit();
 
-    //Conexión NetSuite
+    // NETSUITE CONNECTION
     cn = await getNetSuiteConnection();
 
     let lastSyncDate: string;
@@ -112,64 +112,94 @@ export const syncVendors = async () => {
       String(d.getUTCMinutes()).padStart(2, "0") + ":" +
       String(d.getUTCSeconds()).padStart(2, "0");
 
+    let lastId = sync.last_internal_id || 0;
 
-    const query = `
-    SELECT
-        id,
-        entityid,
-        companyname,
-        legalname,
-        fullname,
-        email,
-        phone,
-        custentity_rfc,
-        balance,
-        payablesaccount,
-        BUILTIN.DF(terms) AS terms,
-        BUILTIN.DF(currency) AS currency,
-        datecreated,
-        lastmodifieddate,
-        isinactive,
-        BUILTIN.DF(custentity_nso_clasificacion_proveedor) AS custentity_nso_clasificacion_proveedor,
-        BUILTIN.DF(custentityes_acreedor) AS custentityes_acreedor
-    FROM vendor
-    WHERE lastmodifieddate >= TO_DATE('${lastSyncDate}','YYYY-MM-DD HH24:MI:SS')
+    const batchSize = 1500;
+
+    let totalFetched = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const formattedDate = lastSyncDate;
+      console.log('Iniciando sync con fecha:', formattedDate)
+
+      const query = `
+      SELECT TOP ${batchSize}
+          id,
+          entityid,
+          companyname,
+          altname AS fullname,
+          email,
+          phone,
+          balancesearch as balance,
+          custentity_rfc,
+          receivablesaccount,
+          overduebalancesearch,
+          creditlimit,
+          BUILTIN.DF(terms) AS terms,
+          BUILTIN.DF(currency) AS currency,
+          datecreated,
+          lastmodifieddate,
+          isinactive,
+          BUILTIN.DF(custentity_nso_clasificacion_cliente) AS custentity_nso_clasificacion_cliente
+      FROM customer
+      WHERE
+      (
+        lastmodifieddate > {ts '${formattedDate}'}
+        OR (
+        lastmodifieddate = {ts '${formattedDate}'}
+                AND id > ${lastId}
+        )
+      )
+      AND category = 3
+      ORDER BY
+            lastmodifieddate ASC,
+            id ASC
     `;
-    const result = await cn.query(query);
-    const cleanResult = serializeBigInt(result);
 
-    console.log(`Vendors obtenidos: ${cleanResult.length}`);
+      console.log("Ejecutando query batch...");
 
-    //Insert en staging por batch con retry y logging
-    const batchSize = 300;
-    for (let i = 0; i < cleanResult.length; i += batchSize) {
-      const batch = cleanResult.slice(i, i + batchSize).map((v: any) => ({
+      const result = await cn.query(query);
+
+      const cleanResult = serializeBigInt(result);
+
+      if (cleanResult.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      const batch = cleanResult.map((v: any) => ({
         id: v.id,
         entityid: v.entityid,
         companyname: v.companyname,
-        legalname: v.legalname,
         fullname: v.fullname,
         email: v.email,
         phone: v.phone,
         rfc: v.custentity_rfc,
         balance: v.balance,
-        payablesaccount: v.payablesaccount,
+        creditlimit: v.creditlimit,
+        duebalance: v.overduebalancesearch,
+        receivablesaccount: v.receivablesaccount,
         terms: v.terms,
         currency: v.currency,
         datecreated: v.datecreated,
         lastmodifieddate: v.lastmodifieddate,
-        isinactive: v.isinactive === "T",
-        clasificacionProveedor: v.custentity_nso_clasificacion_proveedor,
-        tipoProveedor: v.custentityes_acreedor,
+        isinactive: v.isinactive,
+        clasificacionCliente: v.custentity_nso_clasificacion_cliente,
       }));
 
-      const batchStart = new Date();
       await bulkInsertWithRetry(batch);
-      const batchEnd = new Date();
-      console.log(
-        `Batch ${i / batchSize + 1}: ${batch.length} rows en ${(batchEnd.getTime() - batchStart.getTime()) / 1000
-        }s`
-      );
+
+      const lastRecord = cleanResult[cleanResult.length - 1];
+
+      lastId = lastRecord.id;
+      lastSyncDate = lastRecord.lastmodifieddate;
+      console.log('fecha netsuite', lastRecord.lastmodifieddate)
+
+      totalFetched += cleanResult.length;
+
+      console.log(`Batch procesado: ${cleanResult.length} registros`);
+      console.log(`Cursor -> date:${lastSyncDate} line:${lastId}`);
     }
 
     console.log("Datos cargados en staging");
@@ -182,34 +212,26 @@ export const syncVendors = async () => {
     const duration = (mergeEnd.getTime() - startTime.getTime()) / 1000;
     const mergeDuration = (mergeEnd.getTime() - mergeStart.getTime()) / 1000;
 
-    const lastRecord = cleanResult[cleanResult.length - 1];
-    lastSyncDate = lastRecord.lastmodifieddate;
-
-
     console.log(
-      `Merge completado: insert ${mergeResult.inserted} / update ${mergeResult.updated
-      } en ${mergeDuration}s`
+      `Merge completado: insert ${mergeResult.inserted} / update ${mergeResult.updated} en ${mergeDuration}s`
     );
 
-    //Actualizar SyncControl
     await SyncControl.update(
       {
-        last_sync_date: new Date(lastSyncDate.replace(" ", "T") + "Z"),
+        last_sync_date: new Date(),
         last_status: "SUCCESS",
         last_message: `Sync completado en ${duration}s (merge ${mergeDuration}s)`,
         updated_at: new Date(),
-        is_running: false,
+        is_running: false
       },
-      { where: { process_name: "vendor" } }
+      { where: { process_name: "customer" } }
     );
 
     return {
       success: true,
-      total: cleanResult.length,
-      duration,
-      mergeStats: mergeResult
+      total: totalFetched,
+      duration
     };
-
   } catch (error: any) {
     console.error("Error en sincronización:", error);
     await SyncControl.update(
@@ -219,7 +241,7 @@ export const syncVendors = async () => {
         updated_at: new Date(),
         is_running: false,
       },
-      { where: { process_name: "vendor" } }
+      { where: { process_name: "customer" } }
     );
     return { success: false, error: error.message };
   } finally {

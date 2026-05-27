@@ -3,8 +3,11 @@ import syncVendorsRoutes from './SSRS/syncVendorsRoutes';
 import syncVendorInvoicesRoutes from './SSRS/syncVendorInvoicesRoutes';
 import syncCustomersRoutes from './CobranzaPro/syncCustomersRoutes';
 import syncCustomerInvoicesRoutes from './CobranzaPro/syncCustomerInvoicesRoutes';
+import testRoutes from './Test/testRoutes';
 
 const router = Router();
+//ruta para pruebas
+router.use('/test', testRoutes);
 
 //sincronizacion con netsuite(poblado de tablas) para ssrs
 router.use('/syncvendors', syncVendorsRoutes);

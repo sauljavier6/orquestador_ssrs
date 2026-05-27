@@ -4,7 +4,7 @@ import { syncVendorInvoiceLines, syncVendorInvoicePayments, syncVendorInvoices }
 const router = Router();
 
 
-router.get("/", syncVendorInvoiceLines);
+router.get("/", syncVendorInvoices);
 
 
 export default router;

@@ -11,72 +11,84 @@ import {
   timestamps: false,
 })
 export default class CustomerInvoicePaymentStaging extends Model {
-  // 🔑 Clave primaria compuesta de la relación pago–factura
-  @PrimaryKey
-  @Column({
-    type: DataType.BIGINT,
-    allowNull: false,
-  })
-  declare link_id: number; // cb.id
 
   @PrimaryKey
   @Column({
     type: DataType.BIGINT,
-    allowNull: false,
+    autoIncrement: true
   })
-  declare payment_id: number; // p.id
+  declare ID_Staging: number;
 
-  @PrimaryKey
-  @Column({
-    type: DataType.BIGINT,
-    allowNull: false,
-  })
-  declare invoice_id: number; // b.id
-
-  // Información del pago
-  @Column({
-    type: DataType.STRING,
-    allowNull: false,
-  })
-  declare payment_tranid: string; // p.tranid
-
-  @Column(DataType.DATE)
-  declare payment_trandate: Date; // p.trandate
-
-  @Column(DataType.FLOAT)
-  declare foreigntotal: number; // p.foreignpaymentamountused
-
-  @Column(DataType.STRING)
-  declare currency: string; // BUILTIN.DF(p.currency)
-
-  @Column(DataType.FLOAT)
-  declare balance: number; // p.foreignpaymentamountunused
-
-  @Column(DataType.DATE)
-  declare payment_lastmodified: Date; // p.lastmodifieddate (fecha real del pago)
-
-  @Column(DataType.STRING)
-  declare payment_status: string; // p.status
-
-  // Información del proveedor
   @Column(DataType.BIGINT)
-  declare customer: number; // b.entity
+  declare id: number;
 
-  // Información de la factura
   @Column(DataType.STRING)
-  declare invoice_tranid: string; // b.tranid
+  declare tranid: string;
+
+  @Column(DataType.STRING)
+  declare transactionnumber: string;
 
   @Column(DataType.DATE)
-  declare invoice_trandate: Date; // b.trandate
+  declare trandate: Date;
 
   @Column(DataType.DATE)
-  declare invoice_duedate: Date; // b.duedate
+  declare createddate: Date;
 
-  // Amount remaining en el custom record (relación pago–factura)
+  @Column(DataType.DATE)
+  declare lastmodifieddate: Date;
+
+  @Column(DataType.BIGINT)
+  declare createdby: number;
+
+  @Column(DataType.BIGINT)
+  declare lastmodifiedby: number;
+
   @Column(DataType.FLOAT)
-  declare custrecord_amountremaining: number; // cb.custrecord_amountremaining
+  declare total: number;
 
-  @Column(DataType.DATE)
-  declare link_lastmodified: Date; // cb.link_lastmodified
+  @Column(DataType.FLOAT)
+  declare foreigntotal: number;
 
+  @Column(DataType.FLOAT)
+  declare foreignpaymentamountused: number;
+
+  @Column(DataType.FLOAT)
+  declare foreignpaymentamountunused: number;
+
+  @Column(DataType.STRING)
+  declare status: string;
+
+  @Column(DataType.STRING)
+  declare posting: string;
+
+  @Column(DataType.STRING)
+  declare voided: string;
+
+  @Column(DataType.STRING)
+  declare memo: string;
+
+  @Column(DataType.BIGINT)
+  declare entity: number;
+
+  @Column(DataType.STRING)
+  declare currency: string;
+
+  @Column(DataType.STRING)
+  declare paymentmethod: string;
+
+  @Column(DataType.BIGINT)
+  declare postingperiod: number;
+
+  //NUEVOS CAMPOS
+  @Column(DataType.BIGINT)
+  declare custbody_refjournalentry_iva: number;
+
+  @Column(DataType.BIGINT)
+  declare customform: number;
+
+  @Column(DataType.STRING)
+  declare isreversal: string; // 'T' | 'F'
+
+  @Column(DataType.STRING)
+  declare memorized: string; // 'T' | 'F'
 }

@@ -104,10 +104,15 @@ export const syncCustomers = async (req: any, res: any) => {
 
     let lastSyncDate: string;
 
-    lastSyncDate = sync.last_sync_date
-      .toISOString()
-      .slice(0, 19)
-      .replace("T", " ");
+    const d = new Date(sync.last_sync_date);
+
+    lastSyncDate =
+      d.getUTCFullYear() + "-" +
+      String(d.getUTCMonth() + 1).padStart(2, "0") + "-" +
+      String(d.getUTCDate()).padStart(2, "0") + " " +
+      String(d.getUTCHours()).padStart(2, "0") + ":" +
+      String(d.getUTCMinutes()).padStart(2, "0") + ":" +
+      String(d.getUTCSeconds()).padStart(2, "0");
 
     let lastId = sync.last_internal_id || 0;
 
@@ -119,7 +124,7 @@ export const syncCustomers = async (req: any, res: any) => {
     while (hasMore) {
 
 
-      const formattedDate = lastSyncDate.trim();
+      const formattedDate = lastSyncDate;
       console.log('Iniciando sync con fecha:', formattedDate)
 
       const query = `
@@ -130,8 +135,11 @@ export const syncCustomers = async (req: any, res: any) => {
           altname AS fullname,
           email,
           phone,
+          balancesearch as balance,
           custentity_rfc,
           receivablesaccount,
+          overduebalancesearch,
+          creditlimit,
           BUILTIN.DF(terms) AS terms,
           BUILTIN.DF(currency) AS currency,
           datecreated,
@@ -147,6 +155,7 @@ export const syncCustomers = async (req: any, res: any) => {
                 AND id > ${lastId}
         )
       )
+      AND category = 3
       ORDER BY
             lastmodifieddate ASC,
             id ASC
@@ -171,13 +180,15 @@ export const syncCustomers = async (req: any, res: any) => {
         email: v.email,
         phone: v.phone,
         rfc: v.custentity_rfc,
-        balance: 0,
+        balance: v.balance,
+        creditlimit: v.creditlimit,
+        duebalance: v.overduebalancesearch,
         receivablesaccount: v.receivablesaccount,
         terms: v.terms,
         currency: v.currency,
         datecreated: v.datecreated,
         lastmodifieddate: v.lastmodifieddate,
-        isinactive: v.isinactive === "T",
+        isinactive: v.isinactive,
         clasificacionCliente: v.custentity_nso_clasificacion_cliente,
       }));
 
@@ -211,8 +222,7 @@ export const syncCustomers = async (req: any, res: any) => {
 
     await SyncControl.update(
       {
-        last_sync_date: lastSyncDate,
-        last_internal_id: lastId,
+        last_sync_date: new Date(),
         last_status: "SUCCESS",
         last_message: `Sync completado en ${duration}s (merge ${mergeDuration}s)`,
         updated_at: new Date(),

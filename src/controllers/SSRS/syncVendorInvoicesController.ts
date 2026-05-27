@@ -148,13 +148,17 @@ export const syncVendorInvoices = async (req: any, res: any) => {
 
     let lastSyncDate: string;
 
-    lastSyncDate = sync.last_sync_date
-      .toISOString()
-      .slice(0, 19)
-      .replace("T", " ");
+    const d = new Date(sync.last_sync_date);
+
+    lastSyncDate =
+      d.getUTCFullYear() + "-" +
+      String(d.getUTCMonth() + 1).padStart(2, "0") + "-" +
+      String(d.getUTCDate()).padStart(2, "0") + " " +
+      String(d.getUTCHours()).padStart(2, "0") + ":" +
+      String(d.getUTCMinutes()).padStart(2, "0") + ":" +
+      String(d.getUTCSeconds()).padStart(2, "0");
 
     let lastId = sync.last_internal_id || 0;
-    let lastDateIds: number[] = [];
 
     const batchSize = 1000;
     let totalFetched = 0;
@@ -163,13 +167,8 @@ export const syncVendorInvoices = async (req: any, res: any) => {
 
     while (hasMore) {
 
-      const formattedDate = lastSyncDate.trim();
+      const formattedDate = lastSyncDate;
       console.log('Iniciando sync con fecha:', formattedDate)
-
-      const idsFilter =
-        lastDateIds.length > 0
-          ? `AND t.id NOT IN (${lastDateIds.join(",")})`
-          : "";
 
       // Query paginada por batch
       const query = `
@@ -197,11 +196,14 @@ export const syncVendorInvoices = async (req: any, res: any) => {
         FROM transaction t
         LEFT JOIN transactionline tl 
             ON t.id = tl.transaction
-            AND tl.mainline = 'T'
+            --AND tl.mainline = 'T'
         WHERE t.type = 'VendBill'
         AND t.voided = 'F'
-        AND t.lastmodifieddate >= {ts '${formattedDate}'}  
-        ${idsFilter}
+        AND t.id = 78619280
+        AND (
+              t.lastmodifieddate > {ts '${formattedDate}'}
+              OR (t.lastmodifieddate = {ts '${formattedDate}'} AND t.id > ${lastId})
+            )
         ORDER BY t.lastmodifieddate ASC, t.id ASC
       `;
 
@@ -227,39 +229,24 @@ export const syncVendorInvoices = async (req: any, res: any) => {
           id: Number(v.id),
           tranid: v.tranid || "",
           entity: v.entity != null ? Number(v.entity) : null,
-
           trandate: v.trandate ? new Date(v.trandate) : null,
           duedate: v.duedate ? new Date(v.duedate) : null,
-
-          // 💰 FINANCIERO
           amount: amount,
           tax: tax,
           subtotal: amount - tax,
           amountpaid: amountPaid,
           balance: balance,
-
-          // 📍 Ubicación
           location: v.location,
-
-          //orden dse compra
           purchaseorder: v.purchaseorder,
-
-          // 📅 Fechas custom
-          fechapago: v.custbody_nso_fecha_pago ? new Date(v.custbody_nso_fecha_pago) : null,
-          fechacancelacion: v.custbody_nso_fecha_cancelacion ? new Date(v.custbody_nso_fecha_cancelacion) : null,
-
-          // 🏷️ Campos custom texto (si no usas BUILTIN.DF vendrán como ID)
+          fechapago: v.custbody_nso_fecha_pago,
+          fechacancelacion: v.custbody_nso_fecha_cancelacion,
           tipocompra: v.custbody_nso_tipo_compra || null,
           estatuspresupuesto: v.custbody_status_po_budget || null,
           causadevolucionproveedor: v.custbody_nso_causa_dev_proveedor || null,
-
-          // 📊 Generales
           status: v.status || "",
           currency: v.currency,
-          lastmodifieddate: v.lastmodifieddate ? new Date(v.lastmodifieddate) : new Date(),
-
-          // ❌ Cancelado
-          isinactive: v.voided === "T"
+          lastmodifieddate: v.lastmodifieddate,
+          isinactive: v.voided === "T" ? 1 : 0
         };
       });
 
@@ -271,15 +258,7 @@ export const syncVendorInvoices = async (req: any, res: any) => {
       lastId = lastRecord.id;
       lastSyncDate = lastRecord.lastmodifieddate;
 
-      const lastDateTime = new Date(lastSyncDate).getTime();
-
       console.log('fecha netsuite', lastRecord.lastmodifieddate, 'ULTIMO ID', lastId)
-      console.log('fecha lastDateTime', lastDateTime)
-
-      // Filtrar TODOS los IDs que tengan esa misma fecha
-      lastDateIds = cleanResult
-        .filter((r: any) => r.lastmodifieddate === lastSyncDate)
-        .map((r: any) => r.id);
 
       totalFetched += cleanResult.length;
       console.log(`Batch procesado: ${cleanResult.length} registros`);
@@ -300,9 +279,14 @@ export const syncVendorInvoices = async (req: any, res: any) => {
     );
 
     // UPDATE SYNC CONTROL
+    if (totalFetched === 0) {
+      console.log("⚠️ No hubo datos, NO se actualiza last_sync_date");
+    }
+
+    // UPDATE SYNC CONTROL
     await SyncControl.update(
       {
-        last_sync_date: lastSyncDate,
+        last_sync_date: new Date(Date.now() - 5 * 60 * 1000),
         last_internal_id: lastId,
         last_status: "SUCCESS",
         last_message: `Sync completado en ${duration}s (merge ${mergeDuration}s)`,
@@ -311,6 +295,7 @@ export const syncVendorInvoices = async (req: any, res: any) => {
       },
       { where: { process_name: "vendorinvoice" } }
     );
+
 
     return res.status(200).json({
       success: true,
@@ -458,10 +443,16 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
 
     let lastSyncDate: string;
 
-    lastSyncDate = sync.last_sync_date
-      .toISOString()
-      .slice(0, 19)
-      .replace("T", " ");
+    const d = new Date(sync.last_sync_date);
+
+    lastSyncDate =
+      d.getUTCFullYear() + "-" +
+      String(d.getUTCMonth() + 1).padStart(2, "0") + "-" +
+      String(d.getUTCDate()).padStart(2, "0") + " " +
+      String(d.getUTCHours()).padStart(2, "0") + ":" +
+      String(d.getUTCMinutes()).padStart(2, "0") + ":" +
+      String(d.getUTCSeconds()).padStart(2, "0");
+
 
     let lastId = sync.last_internal_id || 0;
 
@@ -471,7 +462,7 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
     let hasMore = true;
 
     while (hasMore) {
-      const formattedDate = lastSyncDate.trim();
+      const formattedDate = lastSyncDate;
       console.log('Iniciando sync con fecha:', formattedDate)
 
       const query = `
@@ -536,33 +527,23 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
       }
 
       const batch = cleanResult.map((l: any) => ({
-
         lineuniquekey: Number(l.lineuniquekey),
-
         lineorder: Number(l.lineorder),
-
         vendor_invoice_id: Number(l.vendor_invoice_id),
-
         item: l.item || "",
         description: l.description || "",
-
         quantity: l.quantity != null ? Number(l.quantity) : 0,
-
         units: l.units || "",
-
         rate: l.rate != null ? Math.abs(Number(l.rate)) : 0,
         amount: l.amount != null ? Math.abs(Number(l.amount)) : 0,
-
         taxcode: l.taxcode,
         ratepercent: l.ratepercent != null ? Math.abs(Number(l.ratepercent)) : 0,
         taxtype: l.taxtype,
         itemtype: l.itemtype,
-
         account: l.account || "",
         department: l.department || "",
         class: l.class || "",
         location: l.location || "",
-
         createddate: l.createddate,
         lastmodifieddate: l.lastmodifieddate,
       }));
@@ -594,9 +575,13 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
       `Merge completado: insert ${mergeResult.inserted} / update ${mergeResult.updated} en ${mergeDuration}s`
     );
 
+    if (totalFetched === 0) {
+      console.log("⚠️ No hubo datos, NO se actualiza last_sync_date");
+    }
+
     await SyncControl.update(
       {
-        last_sync_date: lastSyncDate,
+        last_sync_date: new Date(lastSyncDate.replace(" ", "T") + "Z"),
         last_internal_id: lastId,
         last_status: "SUCCESS",
         last_message: `Sync lines completado en ${duration}s`,
@@ -605,6 +590,8 @@ export const syncVendorInvoiceLines = async (req: any, res: any) => {
       },
       { where: { process_name: "vendorinvoicelines" } }
     );
+
+
 
     return res.status(200).json({
       success: true,
@@ -752,20 +739,25 @@ export const syncVendorInvoicePayments = async (req: any, res: any) => {
 
     let lastSyncDate: string;
 
-    lastSyncDate = sync.last_sync_date
-      .toISOString()
-      .slice(0, 19)
-      .replace("T", " ");
+    const d = new Date(sync.last_sync_date);
+
+    lastSyncDate =
+      d.getUTCFullYear() + "-" +
+      String(d.getUTCMonth() + 1).padStart(2, "0") + "-" +
+      String(d.getUTCDate()).padStart(2, "0") + " " +
+      String(d.getUTCHours()).padStart(2, "0") + ":" +
+      String(d.getUTCMinutes()).padStart(2, "0") + ":" +
+      String(d.getUTCSeconds()).padStart(2, "0");
 
     let lastId = sync.last_internal_id || 0;
 
-    const batchSize = 1500;
+    const batchSize = 1000;
 
     let totalFetched = 0;
     let hasMore = true;
 
     while (hasMore) {
-      const formattedDate = lastSyncDate.trim();
+      const formattedDate = lastSyncDate;
       console.log('Iniciando sync con fecha:', formattedDate)
 
       const query = `
@@ -804,7 +796,6 @@ export const syncVendorInvoicePayments = async (req: any, res: any) => {
         WHERE p.type = 'VendPymt'
         AND p.voided = 'F'
         AND p.memo NOT LIKE '%DONACION%'
-        AND p.id = 76850695
         AND (
             cb.lastmodified > {ts '${formattedDate}'}
             OR (
@@ -889,9 +880,13 @@ export const syncVendorInvoicePayments = async (req: any, res: any) => {
       `Merge completado: insert ${mergeResult.inserted} / update ${mergeResult.updated} en ${mergeDuration}s`
     );
 
+    if (totalFetched === 0) {
+      console.log("⚠️ No hubo datos, NO se actualiza last_sync_date");
+    }
+
     await SyncControl.update(
       {
-        last_sync_date: lastSyncDate,
+        last_sync_date: new Date(lastSyncDate.replace(" ", "T") + "Z"),
         last_internal_id: lastId,
         last_status: "SUCCESS",
         last_message: `Sync payments completado en ${duration}s`,
@@ -935,7 +930,6 @@ export const syncVendorInvoicePayments = async (req: any, res: any) => {
 
   }
 };
-
 
 // Helper retry por batch
 async function bulkInsertWithRetryForCreditMemo(batch: any[], maxRetries = 3) {

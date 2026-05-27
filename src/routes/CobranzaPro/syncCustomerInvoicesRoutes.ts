@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { syncCustomerInvoiceLines, syncCustomerInvoices } from "../../controllers/CobranzaPro/syncCustomerInvoicesController";
+import { syncCustomerInvoiceLines, syncCustomerInvoicePayments, syncCustomerPaymentAplication, syncCustomerInvoices } from "../../controllers/CobranzaPro/syncCustomerInvoicesController";
 
 const router = Router();
 
 
-router.get("/", syncCustomerInvoiceLines);
+router.get("/", syncCustomerInvoicePayments);
 
 export default router;

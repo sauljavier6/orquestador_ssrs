@@ -15,11 +15,17 @@ export default class CustomerInvoiceLineStaging extends Model {
   @PrimaryKey
   @Column({
     type: DataType.BIGINT,
+    autoIncrement: true
+  })
+  declare ID_Staging: number;
+
+
+  @Column({
+    type: DataType.BIGINT,
     allowNull: false
   })
   declare customer_invoice_id: number;
 
-  @PrimaryKey
   @Column({
     type: DataType.BIGINT,
     allowNull: false
@@ -32,7 +38,7 @@ export default class CustomerInvoiceLineStaging extends Model {
   @Column(DataType.STRING)
   declare item: string;
 
-  @Column(DataType.STRING)
+  @Column(DataType.TEXT)
   declare description: string;
 
   @Column(DataType.DECIMAL(18, 4))
@@ -46,6 +52,9 @@ export default class CustomerInvoiceLineStaging extends Model {
 
   @Column(DataType.DECIMAL(18, 4))
   declare amount: number;
+
+  @Column(DataType.DECIMAL(18, 4))
+  declare descuento: number;
 
   @Column(DataType.STRING)
   declare taxcode: string;

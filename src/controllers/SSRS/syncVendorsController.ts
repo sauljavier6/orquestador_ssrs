@@ -101,12 +101,19 @@ export const syncVendors = async (req: any, res: any) => {
 
     //Conexión NetSuite
     cn = await getNetSuiteConnection();
-    const lastSyncDate = sync.last_sync_date || new Date("2024-01-01");
-    const safeDate = new Date(lastSyncDate.getTime() - 5 * 60000);
-    const formattedDate = safeDate
-      .toISOString()
-      .slice(0, 19)
-      .replace("T", " ");
+
+    let lastSyncDate: string;
+
+    const d = new Date(sync.last_sync_date);
+
+    lastSyncDate =
+      d.getUTCFullYear() + "-" +
+      String(d.getUTCMonth() + 1).padStart(2, "0") + "-" +
+      String(d.getUTCDate()).padStart(2, "0") + " " +
+      String(d.getUTCHours()).padStart(2, "0") + ":" +
+      String(d.getUTCMinutes()).padStart(2, "0") + ":" +
+      String(d.getUTCSeconds()).padStart(2, "0");
+
 
     const query = `
     SELECT
@@ -128,7 +135,7 @@ export const syncVendors = async (req: any, res: any) => {
         BUILTIN.DF(custentity_nso_clasificacion_proveedor) AS custentity_nso_clasificacion_proveedor,
         BUILTIN.DF(custentityes_acreedor) AS custentityes_acreedor
     FROM vendor
-    WHERE lastmodifieddate >= TO_DATE('${formattedDate}','YYYY-MM-DD HH24:MI:SS')
+    WHERE lastmodifieddate >= TO_DATE('${lastSyncDate}','YYYY-MM-DD HH24:MI:SS')
     `;
     const result = await cn.query(query);
     const cleanResult = serializeBigInt(result);
@@ -177,6 +184,9 @@ export const syncVendors = async (req: any, res: any) => {
     const duration = (mergeEnd.getTime() - startTime.getTime()) / 1000;
     const mergeDuration = (mergeEnd.getTime() - mergeStart.getTime()) / 1000;
 
+    const lastRecord = cleanResult[cleanResult.length - 1];
+    lastSyncDate = lastRecord.lastmodifieddate;
+
     console.log(
       `Merge completado: insert ${mergeResult.inserted} / update ${mergeResult.updated
       } en ${mergeDuration}s`
@@ -185,7 +195,7 @@ export const syncVendors = async (req: any, res: any) => {
     //Actualizar SyncControl
     await SyncControl.update(
       {
-        last_sync_date: new Date(),
+        last_sync_date: new Date(lastSyncDate.replace(" ", "T") + "Z"),
         last_status: "SUCCESS",
         last_message: `Sync completado en ${duration}s (merge ${mergeDuration}s)`,
         updated_at: new Date(),

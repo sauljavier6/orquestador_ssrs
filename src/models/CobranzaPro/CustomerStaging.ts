@@ -12,10 +12,15 @@ import {
   timestamps: false
 })
 export default class CustomerStaging extends Model {
-
   @PrimaryKey
   @Column({
-    type: DataType.INTEGER
+    type: DataType.BIGINT,
+    autoIncrement: true
+  })
+  declare ID_Staging: number;
+
+  @Column({
+    type: DataType.BIGINT
   })
   declare id: number;
 
@@ -40,6 +45,12 @@ export default class CustomerStaging extends Model {
   @Column(DataType.DECIMAL(18, 2))
   declare balance: number;
 
+  @Column(DataType.DECIMAL(18, 2))
+  declare creditlimit: number;
+
+  @Column(DataType.DECIMAL(18, 2))
+  declare duebalance: number;
+
   @Column(DataType.INTEGER)
   declare receivablesaccount: number;
 
@@ -55,8 +66,8 @@ export default class CustomerStaging extends Model {
   @Column(DataType.DATE)
   declare lastmodifieddate: Date;
 
-  @Column(DataType.BOOLEAN)
-  declare isinactive: boolean;
+  @Column(DataType.STRING)
+  declare isinactive: string;
 
   @Column(DataType.STRING)
   declare clasificacionCliente: string;
