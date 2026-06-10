@@ -7,6 +7,7 @@ import CustomerInvoiceStaging from "../../models/CobranzaPro/CustomerInvoiceStag
 import CustomerInvoiceLineStaging from "../../models/CobranzaPro/CustomerInvoiceLineStaging";
 import CustomerInvoicePaymentStaging from "../../models/CobranzaPro/CustomerInvoicePaymentStaging";
 import CustomerPaymentAplicationStaging from "../../models/CobranzaPro/CustomerPaymentAplicationStaging";
+import CustomerContactStaging from "../../models/CobranzaPro/CustomerContactStaging";
 
 type MergeStats = {
     inserted: number;
@@ -562,7 +563,7 @@ export const syncCustomerInvoiceLines = async () => {
             console.log(`Batch procesado: ${cleanResult.length} registros`);
             console.log(`Cursor Lines-> date:${lastSyncDate} , 'ULTIMO ID'`, lastId);
 
-            if (cleanResult.length < 50) {
+            if (cleanResult.length < 2250) {
                 console.log("✅ Último batch detectado");
                 hasMore = false;
                 break;
@@ -1183,6 +1184,273 @@ export const syncCustomerPaymentAplication = async () => {
                 is_running: false
             },
             { where: { process_name: "customerpaymentaplication" } }
+        );
+
+        return {
+            success: false,
+            error: error.message
+        };
+
+    } finally {
+
+        if (cn) {
+            await cn.close();
+            console.log("ODBC cerrado");
+        }
+    }
+};
+
+
+//Listooooooooooooooooooooooo
+// Helper retry por batch
+async function bulkInsertWithRetryForCustomerContacts(batch: any[], maxRetries = 3) {
+
+    const chunkSize = 100;
+
+    for (let i = 0; i < batch.length; i += chunkSize) {
+
+        const chunk = batch.slice(i, i + chunkSize);
+
+        let attempts = 0;
+
+        while (attempts < maxRetries) {
+            try {
+
+                await CustomerContactStaging.bulkCreate(chunk, {
+                    validate: false,
+                    returning: false
+                });
+
+                break;
+
+            } catch (err) {
+
+                attempts++;
+
+                console.warn(`Bulk insert fallo intento ${attempts}:`, err);
+
+                if (attempts >= maxRetries) throw err;
+
+                await new Promise(r => setTimeout(r, 1000 * attempts));
+            }
+        }
+    }
+}
+// Helper retry para sp
+async function executeMergeWithRetryForCustomerContacts(maxRetries = 3): Promise<MergeStats> {
+    let attempts = 0;
+
+    while (attempts < maxRetries) {
+        try {
+            const result = await sequelizeCP.query(
+                "EXEC sp_merge_CustomerContacts",
+                { type: QueryTypes.SELECT }
+            );
+
+            // Tomamos el primer objeto y hacemos cast a MergeStats
+            const mergeResult = Array.isArray(result) && result.length > 0
+                ? (result[0] as unknown as MergeStats)
+                : { inserted: 0, updated: 0 };
+
+            // Aseguramos que sean números
+            return {
+                inserted: Number(mergeResult.inserted) || 0,
+                updated: Number(mergeResult.updated) || 0,
+            };
+        } catch (err) {
+            attempts++;
+            console.warn(`Merge SP fallo en intento ${attempts}: ${err}`);
+            if (attempts === maxRetries) throw err;
+            await new Promise(res => setTimeout(res, 1000 * attempts)); // espera exponencial
+        }
+    }
+
+    throw new Error("Merge SP falló después de todos los intentos");
+}
+//endpoint para aplicacion de pagos
+export const syncCustomerContacts = async () => {
+    let cn;
+    const startTime = new Date();
+
+    try {
+
+        console.log("Iniciando sincronización customer contacts...");
+
+        const transaction = await sequelizeCP.transaction();
+
+        const sync = await SyncControl.findOne({
+            where: { process_name: "customercontacts" },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+
+        if (!sync) throw new Error("No existe registro en SyncControl");
+
+        if (
+            sync.is_running &&
+            sync.updated_at &&
+            (Date.now() - new Date(sync.updated_at).getTime()) / 60000 < 10
+        ) {
+            await transaction.rollback();
+            return {
+                success: false,
+                message: "Proceso en ejecución"
+            };
+        }
+
+        await SyncControl.update(
+            { is_running: true, updated_at: new Date() },
+            { where: { process_name: "customercontacts" }, transaction }
+        );
+
+        await transaction.commit();
+
+        // NETSUITE CONNECTION
+        cn = await getNetSuiteConnection();
+
+        let lastSyncDate: string;
+        const d = new Date(sync.last_sync_date);
+
+        lastSyncDate =
+            d.getUTCFullYear() + "-" +
+            String(d.getUTCMonth() + 1).padStart(2, "0") + "-" +
+            String(d.getUTCDate()).padStart(2, "0") + " " +
+            String(d.getUTCHours()).padStart(2, "0") + ":" +
+            String(d.getUTCMinutes()).padStart(2, "0") + ":" +
+            String(d.getUTCSeconds()).padStart(2, "0");
+
+        let lastId = 0;
+
+        const batchSize = 5000;
+        let totalFetched = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+
+            const formattedDate = lastSyncDate;
+            console.log(`Iniciando sync -> fecha: ${formattedDate}`);
+
+            const query = `
+                SELECT TOP ${batchSize}
+                    c.id,
+                    c.company,
+                    c.email,
+                    c.entityid,
+                    c.firstname,
+                    c.lastname,
+                    c.fullname,
+                    c.image,
+                    c.homephone,
+                    c.mobilephone,
+                    c.owner,
+                    c.lastmodifieddate,
+                    c.isinactive
+                FROM contact c
+                inner join customer u on u.id = c.company 
+                WHERE u.category = 3
+                AND (
+                    c.lastmodifieddate > {ts '${formattedDate}'}
+                    OR (
+                        c.lastmodifieddate = {ts '${formattedDate}'}
+                        AND c.id > ${lastId}
+                    )
+                )                                                   
+                ORDER BY c.lastmodifieddate ASC, c.id ASC
+            `;
+
+            console.log("Ejecutando query batch...");
+
+            const response = await queryWithReconnect(cn, query);
+
+            const result = response.result;
+            cn = response.connection;
+
+            const cleanResult = serializeBigInt(result);
+
+            if (cleanResult.length === 0) {
+                hasMore = false;
+                break;
+            }
+
+            const batch = cleanResult.map((c: any) => ({
+                id: Number(c.id),
+                company: Number(c.company),
+                email: c.email,
+                entityid: c.entityid,
+                firstname: c.firstname,
+                lastname: c.lastname,
+                fullname: c.fullname,
+                image: c.image,
+                homephone: c.homephone,
+                mobilephone: c.mobilephone,
+                owner: c.owner ? Number(c.owner) : null,
+                lastmodifieddate: c.lastmodifieddate,
+                isinactive: c.isinactive,
+            }));
+
+            await bulkInsertWithRetryForCustomerContacts(batch);
+
+            const lastRecord = cleanResult[cleanResult.length - 1];
+
+            lastId = lastRecord.id;
+            lastSyncDate = lastRecord.lastmodifieddate;
+
+            totalFetched += cleanResult.length;
+
+            console.log(`Batch procesado: ${cleanResult.length} registros`);
+            console.log(`Cursor Contacts -> date:${lastSyncDate} , 'ULTIMO ID'`, lastId);
+
+            if (cleanResult.length < 50) {
+                console.log("✅ Último batch detectado");
+                hasMore = false;
+                break;
+            }
+        }
+
+        console.log("Todos los datos cargados en staging (customer contacts)");
+
+        // MERGE
+        const mergeStart = new Date();
+        const mergeResult = await executeMergeWithRetryForCustomerContacts();
+        const mergeEnd = new Date();
+
+        const duration = (mergeEnd.getTime() - startTime.getTime()) / 1000;
+        const mergeDuration = (mergeEnd.getTime() - mergeStart.getTime()) / 1000;
+
+        console.log(`Merge completado: insert ${mergeResult.inserted} / update ${mergeResult.updated} en ${mergeDuration}s`);
+
+        if (totalFetched === 0) {
+            console.log("⚠️ No hubo datos, NO se actualiza last_sync_date");
+        }
+        await SyncControl.update(
+            {
+                last_sync_date: new Date(),
+                last_status: "SUCCESS",
+                last_message: `Sync contacts completado en ${duration}s`,
+                updated_at: new Date(),
+                is_running: false
+            },
+            { where: { process_name: "customercontacts" } }
+        );
+
+        return {
+            success: true,
+            total: totalFetched,
+            duration
+        };
+
+    } catch (error: any) {
+
+        console.error("Error en sincronización de contactos:", error);
+
+        await SyncControl.update(
+            {
+                last_status: "FAILED",
+                last_message: error.message,
+                updated_at: new Date(),
+                is_running: false
+            },
+            { where: { process_name: "customercontacts" } }
         );
 
         return {

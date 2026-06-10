@@ -141,7 +141,8 @@ export const syncCustomers = async () => {
           datecreated,
           lastmodifieddate,
           isinactive,
-          BUILTIN.DF(custentity_nso_clasificacion_cliente) AS custentity_nso_clasificacion_cliente
+          BUILTIN.DF(custentity_nso_clasificacion_cliente) AS custentity_nso_clasificacion_cliente,
+          salesrep
       FROM customer
       WHERE
       (
@@ -186,6 +187,7 @@ export const syncCustomers = async () => {
         lastmodifieddate: v.lastmodifieddate,
         isinactive: v.isinactive,
         clasificacionCliente: v.custentity_nso_clasificacion_cliente,
+        salesrep: v.salesrep
       }));
 
       await bulkInsertWithRetry(batch);

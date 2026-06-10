@@ -19,7 +19,7 @@ export default class NotificationReads extends Model {
   declare NotificationId: number;
 
   @Column(DataType.INTEGER)
-  declare ID_Customer: number;
+  declare ID_User: number;
 
   @Column({
     type: DataType.BOOLEAN,

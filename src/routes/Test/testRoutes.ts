@@ -6,6 +6,6 @@ import { syncCustomerInvoiceLines, syncCustomerInvoicePayments, syncCustomerInvo
 const router = Router();
 
 
-router.get("/", syncCustomerInvoices);
+router.get("/", syncCustomers);
 
 export default router;

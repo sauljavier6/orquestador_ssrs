@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { syncCustomerInvoiceLines, syncCustomerInvoicePayments, syncCustomerInvoices, syncCustomerPaymentAplication } from "../../services/CobranzaPro/syncCustomerInvoices.service";
+import { syncCustomerContacts, syncCustomerInvoiceLines, syncCustomerInvoicePayments, syncCustomerInvoices, syncCustomerPaymentAplication } from "../../services/CobranzaPro/syncCustomerInvoices.service";
 import SyncControl from "../../models/CobranzaPro/SyncControl";
 import sequelizeCP from "../../config/dbCobranzaPro";
 import { syncCustomers } from "../../services/CobranzaPro/syncCustomers.services";
@@ -7,7 +7,7 @@ import { syncCustomers } from "../../services/CobranzaPro/syncCustomers.services
 const PROCESS_NAME = "customer_pipeline";
 
 cron.schedule(
-  "*/30 * * * *", // cada 15 minutos
+  "*/15 * * * *", // cada 15 minutos
   async () => {
     let transaction;
 
@@ -55,6 +55,10 @@ cron.schedule(
       console.log("🧾 Customer...");
       const customer = await syncCustomers();
       if (!customer.success) throw new Error("Customer falló");
+
+      console.log("🧾 Contacts...");
+      const customercontacts = await syncCustomerContacts();
+      if (!customercontacts.success) throw new Error("Customer Contacts falló");
 
       console.log("🧾 Invoices...");
       const invoices = await syncCustomerInvoices();

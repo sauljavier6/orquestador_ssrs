@@ -55,6 +55,9 @@ export default class Customer extends Model {
   @Column(DataType.STRING)
   declare currency: string;
 
+  @Column(DataType.STRING)
+  declare salesrep: string;
+
   @Column(DataType.DATE)
   declare datecreated: Date;
 

@@ -116,7 +116,4 @@ export default class Users extends Model {
     allowNull: true,
   })
   declare State: boolean;
-
-  @HasMany(() => Notifications)
-  Notifications?: Notifications[];
 }
