@@ -51,6 +51,9 @@ export default class CustomerStaging extends Model {
   @Column(DataType.DECIMAL(18, 2))
   declare duebalance: number;
 
+  @Column(DataType.STRING)
+  declare daysoverdue: string;
+
   @Column(DataType.INTEGER)
   declare receivablesaccount: number;
 

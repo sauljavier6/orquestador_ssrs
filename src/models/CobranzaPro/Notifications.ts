@@ -1,61 +1,117 @@
-// @/models.ts
-import { Table, Model, Column, DataType, PrimaryKey, AutoIncrement, BelongsTo, ForeignKey } from "sequelize-typescript";
-import User from "./Users";
-import TransactionType from "./TransactionType";
+import {
+  Table,
+  Model,
+  Column,
+  DataType,
+  PrimaryKey,
+  AutoIncrement,
+  BelongsTo,
+  ForeignKey,
+} from "sequelize-typescript";
+
+import Users from "./Users";
 import Customer from "./Customer";
+import TransactionType from "./TransactionType";
 
-@Table({ tableName: "Notifications" })
+@Table({
+  tableName: "Notifications",
+  timestamps: true,
+})
 export default class Notifications extends Model {
-    @PrimaryKey
-    @AutoIncrement
-    @Column(DataType.INTEGER)
-    declare id: number;
+  @PrimaryKey
+  @AutoIncrement
+  @Column(DataType.INTEGER)
+  declare id: number;
 
-    @Column(DataType.INTEGER)
-    declare ID_Customer: number;
+  // ADMIN | CUSTOMER
+  @Column({
+    type: DataType.STRING(20),
+    allowNull: false,
+  })
+  declare recipientType: "ADMIN" | "CUSTOMER";
 
-    //usuario que creo registro
-    @ForeignKey(() => User)
-    @Column(DataType.INTEGER)
-    declare CreateId: number;
+  // Para notificaciones de admin
+  @ForeignKey(() => Users)
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  declare recipientUserId: number;
 
-    @BelongsTo(() => User)
-    user?: User;
+  @BelongsTo(() => Users, "recipientUserId")
+  recipientUser?: Users;
 
-    //Id de la transaccion
-    @Column(DataType.INTEGER)
-    declare ID_Transaction: number;
+  // Para notificaciones de cliente
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  declare recipientCustomerId: number;
 
-    //Id tipo de transaccion
-    @ForeignKey(() => TransactionType)
-    @Column(DataType.INTEGER)
-    declare ID_TransactionType: number;
+  // Usuario que creó/generó la notificación
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  declare createdByUserId: number;
 
-    @BelongsTo(() => TransactionType)
-    TransactionType?: TransactionType;
+  // CAMPAIGN | MANUAL_REMINDER | PAYMENT | INVOICE | PROMISE | CALL | SYSTEM
+  @Column({
+    type: DataType.STRING(50),
+    allowNull: false,
+  })
+  declare sourceType: string;
 
-    //Tipo notificacion
-    @Column({
-        type: DataType.STRING,
-        allowNull: false,
-    })
-    declare type: "info" | "warning" | "danger" | "success";
+  // ID relacionado: CampaignLog, Payment, Call, Promise, etc.
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  declare sourceId: number;
 
-    @Column({
-        type: DataType.STRING,
-        allowNull: false,
-    })
-    declare description: string;
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  declare transactionId: number;
 
-    @Column({
-        type: DataType.STRING,
-        allowNull: false,
-    })
-    declare message: string;
+  @ForeignKey(() => TransactionType)
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  declare transactionTypeId: number;
 
-    @Column({
-        type: DataType.BOOLEAN,
-        allowNull: false
-    })
-    declare isRead: boolean;
+  @BelongsTo(() => TransactionType)
+  transactionType?: TransactionType;
+
+  @Column({
+    type: DataType.STRING(20),
+    allowNull: false,
+  })
+  declare type: "info" | "warning" | "danger" | "success";
+
+  @Column({
+    type: DataType.STRING(255),
+    allowNull: false,
+  })
+  declare title: string;
+
+  @Column({
+    type: DataType.TEXT,
+    allowNull: false,
+  })
+  declare message: string;
+
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false
+  })
+  declare isRead: boolean;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: true,
+  })
+  declare readAt: Date;
 }

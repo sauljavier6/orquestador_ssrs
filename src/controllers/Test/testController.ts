@@ -47,10 +47,14 @@ export const syncDebug = async (req: any, res: any) => {
 
         // 🔹 Query de prueba
         const queryColumns = `
-        SELECT
+        SELECT 
           *
-        FROM customer
-        where id = 8382
+        FROM transaction t
+            WHERE t.type = 'CustPymt'
+            AND t.id = 83873281
+            AND t.memorized = 'F'
+            AND UPPER(BUILTIN.DF(t.entity)) NOT LIKE '%PUBLICO EN GENERAL%'                                                        
+        ORDER BY t.lastmodifieddate ASC, t.id ASC
         `;
 
         const response = await queryWithReconnect(cn, queryColumns);

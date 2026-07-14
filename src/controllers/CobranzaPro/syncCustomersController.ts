@@ -1,6 +1,5 @@
 // src/controllers/vendors.controller.ts
 import { QueryTypes } from "sequelize";
-import SyncControl from "../../models/CobranzaPro/SyncControl";
 import { getNetSuiteConnection } from "../../config/odbc";
 import sequelizeCP from "../../config/dbCobranzaPro";
 import CustomerStaging from "../../models/CobranzaPro/CustomerStaging";
@@ -74,71 +73,19 @@ export const syncCustomers = async (req: any, res: any) => {
   try {
     console.log("Iniciando sincronización customers enterprise...");
 
-    //Lock y watchdog
-    const transaction = await sequelizeCP.transaction();
-    const sync = await SyncControl.findOne({
-      where: { process_name: "customer" },
-      transaction,
-      lock: transaction.LOCK.UPDATE
-    });
-    if (!sync) throw new Error("No existe registro en SyncControl");
-
-    if (
-      sync.is_running &&
-      (new Date().getTime() - new Date(sync.updated_at).getTime()) / 60000 < 10
-    ) {
-      await transaction.rollback();
-      return res
-        .status(200)
-        .json({ success: false, message: "Proceso en ejecución" });
-    }
-
-    await SyncControl.update(
-      { is_running: true, updated_at: new Date() },
-      { where: { process_name: "customer" }, transaction }
-    );
-    await transaction.commit();
-
     // NETSUITE CONNECTION
     cn = await getNetSuiteConnection();
 
-    let lastSyncDate: string;
-
-    const d = new Date(sync.last_sync_date);
-
-    lastSyncDate =
-      d.getUTCFullYear() + "-" +
-      String(d.getUTCMonth() + 1).padStart(2, "0") + "-" +
-      String(d.getUTCDate()).padStart(2, "0") + " " +
-      String(d.getUTCHours()).padStart(2, "0") + ":" +
-      String(d.getUTCMinutes()).padStart(2, "0") + ":" +
-      String(d.getUTCSeconds()).padStart(2, "0");
-
-    let lastId = sync.last_internal_id || 0;
-
-    const batchSize = 1500;
-
-    let totalFetched = 0;
-    let hasMore = true;
-
-    while (hasMore) {
-
-
-      const formattedDate = lastSyncDate;
-      console.log('Iniciando sync con fecha:', formattedDate)
-
       const query = `
-      SELECT TOP ${batchSize}
+      SELECT 
           id,
           entityid,
           companyname,
           altname AS fullname,
           email,
           phone,
-          balancesearch as balance,
           custentity_rfc,
           receivablesaccount,
-          overduebalancesearch,
           creditlimit,
           BUILTIN.DF(terms) AS terms,
           BUILTIN.DF(currency) AS currency,
@@ -146,17 +93,12 @@ export const syncCustomers = async (req: any, res: any) => {
           lastmodifieddate,
           isinactive,
           BUILTIN.DF(custentity_nso_clasificacion_cliente) AS custentity_nso_clasificacion_cliente,
-          salesrep
+          salesrep, 
+          balancesearch,
+          overduebalancesearch, 
+          daysoverduesearch
       FROM customer
-      WHERE
-      (
-        lastmodifieddate > {ts '${formattedDate}'}
-        OR (
-        lastmodifieddate = {ts '${formattedDate}'}
-                AND id > ${lastId}
-        )
-      )
-      AND category = 3
+      WHERE category = 3
       ORDER BY
             lastmodifieddate ASC,
             id ASC
@@ -168,11 +110,6 @@ export const syncCustomers = async (req: any, res: any) => {
 
       const cleanResult = serializeBigInt(result);
 
-      if (cleanResult.length === 0) {
-        hasMore = false;
-        break;
-      }
-
       const batch = cleanResult.map((v: any) => ({
         id: v.id,
         entityid: v.entityid,
@@ -181,7 +118,7 @@ export const syncCustomers = async (req: any, res: any) => {
         email: v.email,
         phone: v.phone,
         rfc: v.custentity_rfc,
-        balance: v.balance,
+        balance: v.balancesearch,
         creditlimit: v.creditlimit,
         duebalance: v.overduebalancesearch,
         receivablesaccount: v.receivablesaccount,
@@ -191,22 +128,14 @@ export const syncCustomers = async (req: any, res: any) => {
         lastmodifieddate: v.lastmodifieddate,
         isinactive: v.isinactive,
         clasificacionCliente: v.custentity_nso_clasificacion_cliente,
-        salesrep: v.salesrep
+        salesrep: v.salesrep,
+        daysoverdue: v.daysoverduesearch
       }));
 
       await bulkInsertWithRetry(batch);
 
-      const lastRecord = cleanResult[cleanResult.length - 1];
-
-      lastId = lastRecord.id;
-      lastSyncDate = lastRecord.lastmodifieddate;
-      console.log('fecha netsuite', lastRecord.lastmodifieddate)
-
-      totalFetched += cleanResult.length;
-
       console.log(`Batch procesado: ${cleanResult.length} registros`);
-      console.log(`Cursor -> date:${lastSyncDate} line:${lastId}`);
-    }
+    
 
     console.log("Datos cargados en staging");
 
@@ -222,33 +151,12 @@ export const syncCustomers = async (req: any, res: any) => {
       `Merge completado: insert ${mergeResult.inserted} / update ${mergeResult.updated} en ${mergeDuration}s`
     );
 
-    await SyncControl.update(
-      {
-        last_sync_date: new Date(),
-        last_status: "SUCCESS",
-        last_message: `Sync completado en ${duration}s (merge ${mergeDuration}s)`,
-        updated_at: new Date(),
-        is_running: false
-      },
-      { where: { process_name: "customer" } }
-    );
-
     return res.status(200).json({
       success: true,
-      total: totalFetched,
       duration
     });
   } catch (error: any) {
     console.error("Error en sincronización:", error);
-    await SyncControl.update(
-      {
-        last_status: "FAILED",
-        last_message: error.message,
-        updated_at: new Date(),
-        is_running: false,
-      },
-      { where: { process_name: "customer" } }
-    );
     return res.status(500).json({ success: false, error: error.message });
   } finally {
     if (cn) {

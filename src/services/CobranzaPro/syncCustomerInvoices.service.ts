@@ -187,7 +187,7 @@ export const syncCustomerInvoices = async () => {
                 t.foreignamountunpaid AS balance,
                 t.custbody_taxtotal AS taxtotal,
                 BUILTIN.DF(t.location) AS location, 
-                BUILTIN.DF(t.custbody_nso_ct_metodo_pago) AS metododepago,
+                t.custbody_nso_ct_metodo_pago AS metododepago,
                 BUILTIN.DF(t.status) AS status,
                 BUILTIN.DF(t.currency) AS currency,
                 t.lastmodifieddate,
@@ -239,7 +239,7 @@ export const syncCustomerInvoices = async () => {
                     amountpaid: amountPaid,
                     balance: balance,
                     location: v.location,
-                    tipocompra: v.custbody_nso_tipo_compra,
+                    metododepago: v.metododepago,
                     estatuspresupuesto: v.custbody_status_po_budget,
                     status: v.status || "",
                     currency: v.currency,
@@ -792,7 +792,9 @@ export const syncCustomerInvoicePayments = async () => {
                 custbody_refjournalentry_iva,
                 customform,
                 isreversal,
-                memorized
+                memorized,
+                custbody_uuid,
+                custbody_refpdf
             FROM transaction t
             WHERE t.type = 'CustPymt'
             AND t.memorized = 'F'
@@ -846,6 +848,8 @@ export const syncCustomerInvoicePayments = async () => {
                 customform: l.customform,
                 isreversal: l.isreversal,
                 memorized: l.memorized,
+                uuid: l.custbody_uuid || null,
+                idpdf: l.custbody_refpdf || null,
             }));
 
             await bulkInsertWithRetryForPayments(batch);

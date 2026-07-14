@@ -28,6 +28,9 @@ export default class Campaign extends Model {
     declare canal: number;
 
     @Column(DataType.STRING)
+    declare template: string;
+
+    @Column(DataType.STRING)
     declare asunto: string;
 
     @Column(DataType.INTEGER)
@@ -42,7 +45,7 @@ export default class Campaign extends Model {
     @Column(DataType.INTEGER)
     declare repetircada: number;
 
-    @Column(DataType.STRING)
+    @Column(DataType.TEXT)
     declare mensaje: string;
 
     @Column(DataType.INTEGER)

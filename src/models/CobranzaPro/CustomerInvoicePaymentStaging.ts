@@ -79,7 +79,12 @@ export default class CustomerInvoicePaymentStaging extends Model {
   @Column(DataType.BIGINT)
   declare postingperiod: number;
 
-  //NUEVOS CAMPOS
+  @Column(DataType.STRING)
+  declare uuid: string;
+
+  @Column(DataType.STRING)
+  declare idpdf: string;
+
   @Column(DataType.BIGINT)
   declare custbody_refjournalentry_iva: number;
 

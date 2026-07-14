@@ -53,7 +53,7 @@ export default class CustomerInvoice extends Model {
   declare location: string;
 
   @Column(DataType.STRING)
-  declare tipocompra: string;
+  declare metododepago: string;
 
   @Column(DataType.STRING)
   declare estatuspresupuesto: string;

@@ -64,10 +64,10 @@ cron.schedule(
       const invoices = await syncCustomerInvoices();
       if (!invoices.success) throw new Error("Customer Invoices falló");
 
-      console.log("📊 Calculando balances...");
-      const balanceStart = Date.now();
-      await sequelizeCP.query("EXEC sp_UpdateCustomerBalance");
-      console.log(`Balances calculados en ${(Date.now() - balanceStart) / 1000}s`);
+      //console.log("📊 Calculando balances...");
+      //const balanceStart = Date.now();
+      //await sequelizeCP.query("EXEC sp_UpdateCustomerBalance");
+      //console.log(`Balances calculados en ${(Date.now() - balanceStart) / 1000}s`);
 
       console.log("📦 Lines...");
       const lines = await syncCustomerInvoiceLines();

@@ -4,6 +4,7 @@ import syncVendorInvoicesRoutes from './SSRS/syncVendorInvoicesRoutes';
 import syncCustomersRoutes from './CobranzaPro/syncCustomersRoutes';
 import syncCustomerInvoicesRoutes from './CobranzaPro/syncCustomerInvoicesRoutes';
 import testRoutes from './Test/testRoutes';
+import consultasRoutes from './ConsultasSql/consultasRoutes';
 
 const router = Router();
 //ruta para pruebas
@@ -16,5 +17,8 @@ router.use('/syncvendorinvoices', syncVendorInvoicesRoutes);
 //sincronizacion con netsuite(poblado de tablas) para CobranzaPro
 router.use('/synccustomer', syncCustomersRoutes);
 router.use('/synccustomerinvoices', syncCustomerInvoicesRoutes);
+
+//
+router.use('/consultas', consultasRoutes);
 
 export default router;

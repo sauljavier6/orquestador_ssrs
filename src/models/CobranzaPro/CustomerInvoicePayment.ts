@@ -72,6 +72,12 @@ export default class CustomerInvoicePayment extends Model {
   @Column(DataType.BIGINT)
   declare postingperiod: number;
 
+  @Column(DataType.STRING)
+  declare uuid: string;
+
+  @Column(DataType.STRING)
+  declare idpdf: string;
+
   @Column(DataType.BIGINT)
   declare custbody_refjournalentry_iva: number;
 

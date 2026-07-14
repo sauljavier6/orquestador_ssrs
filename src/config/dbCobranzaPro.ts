@@ -23,6 +23,9 @@ import Campaign from "../models/CobranzaPro/Campaign";
 import NotificationReads from "../models/CobranzaPro/NotificationReads";
 import CustomerContact from "../models/CobranzaPro/CustomerContact";
 import CustomerContactStaging from "../models/CobranzaPro/CustomerContactStaging";
+import CampaignLog from "../models/CobranzaPro/CampaignLog";
+import CampaignCustomer from "../models/CobranzaPro/CampaignCustomer";
+import CollectionTimeline from "../models/CobranzaPro/CollectionTimeline";
 
 dotenv.config();
 
@@ -38,8 +41,8 @@ const sequelizeCP = new Sequelize({
   SyncControl,
   Customer, CustomerStaging, CustomerInvoice, CustomerInvoiceStaging, CustomerInvoiceLine, CustomerInvoiceLineStaging,
   CustomerInvoicePaymentStaging, CustomerInvoicePayment, CustomerPaymentAplication, CustomerPaymentAplicationStaging, 
-  Notifications, Users, Rol, Phone, Email, TransactionType, Campaign, NotificationReads, CustomerContact, CustomerContactStaging
-  
+  Notifications, Users, Rol, Phone, Email, TransactionType, Campaign, NotificationReads, CustomerContact, CustomerContactStaging,
+  CampaignLog, CampaignCustomer, CollectionTimeline
   ],
   logging: false,
   pool: {
