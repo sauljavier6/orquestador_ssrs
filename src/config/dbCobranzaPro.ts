@@ -49,7 +49,7 @@ const sequelizeCP = new Sequelize({
     max: 20,
     min: 2,
     idle: 10000,
-    acquire: 60000
+    acquire: 1800000
   },
 
   dialectOptions: {

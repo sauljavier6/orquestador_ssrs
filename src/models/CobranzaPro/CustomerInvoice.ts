@@ -64,6 +64,9 @@ export default class CustomerInvoice extends Model {
   @Column(DataType.STRING)
   declare idpdf: string;
 
+  @Column(DataType.STRING)
+  declare idxml: string;
+
   @Column(DataType.DATE)
   declare lastmodifieddate: Date;
 

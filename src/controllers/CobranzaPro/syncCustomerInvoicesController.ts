@@ -193,7 +193,8 @@ export const syncCustomerInvoices = async (req: any, res: any) => {
                 t.lastmodifieddate,
                 t.voided,
                 t.custbody_uuid,
-                t.custbody_refpdf
+                t.custbody_refpdf,
+                t.custbody_xml_file
             FROM transaction t
             WHERE t.type = 'CustInvc'
             AND t.memorized = 'F'
@@ -247,6 +248,7 @@ export const syncCustomerInvoices = async (req: any, res: any) => {
                     isinactive: v.voided,
                     uuid: v.custbody_uuid || null,
                     idpdf: v.custbody_refpdf || null,
+                    idxml: v.custbody_xml_file || null,
                 };
             });
 
